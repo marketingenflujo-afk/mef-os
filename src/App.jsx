@@ -6,7 +6,7 @@ import {
   Clock, AlertCircle, CheckCircle2, Circle, FileText, Zap, Sparkles, LayoutDashboard,
   PieChart, Wallet, GitBranch, Lightbulb, Mic, Scissors, ThumbsUp, Send, Image as ImageIcon,
   Wrench, Library, Route, ListChecks, MessageSquare, Paperclip, Video, Eye, Gauge, Flag,
-  Building2, Star, Command, CornerDownLeft, Filter, Layers, Compass, Beaker, Activity,
+  Building2, Star, Command, CornerDownLeft, Filter, Layers, Compass, Beaker, Activity, Lock,
   ClipboardList, Rocket, Share2, ShieldCheck, Award, Play, Download
 } from "lucide-react";
 
@@ -88,6 +88,23 @@ import { auth } from "./services/auth";
 const AppCtx = createContext(null);
 const useApp = () => useContext(AppCtx);
 
+/* Las subáreas definidas en la base mandan sobre el catálogo del código.
+   Así se agregan o reordenan etapas sin tocar la aplicación. */
+function itemsDeArea(area) {
+  const deLaBase = services.subareas.byArea(area.id);
+  if (!deLaBase.length) return area.items;
+  const iconos = {
+    research: Search, ideas: Lightbulb, guiones: FileText, grabacion: Mic, edicion: Scissors,
+    avatares: Bot, visual: ImageIcon, aprobaciones: ThumbsUp, final: Send, calendario: Calendar,
+    campanas: Megaphone, creatividades: ImageIcon, presupuesto: Wallet, metricas: BarChart3,
+    tests: Beaker, optimizacion: Gauge,
+  };
+  return deLaBase.map((sa) => ({
+    id: sa.slug, name: sa.nombre, icon: iconos[sa.slug.split("/")[1]] || ListChecks,
+    view: "subarea", slug: sa.slug,
+  }));
+}
+
 function StatusBadge({ tone = "gray", children, dot = false }) {
   const t = TONE[tone] || TONE.gray;
   return (
@@ -124,8 +141,8 @@ function DepartmentCard({ area, onOpenArea, onOpenSub }) {
       </button>
       <hr className="divider" style={{ margin: "14px 0 8px" }} />
       <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        {area.items.map((it) => (
-          <button key={it.id} className="row-link" onClick={() => onOpenSub(area.id, it.id)}>
+        {itemsDeArea(area).map((it) => (
+          <button key={it.id} className="row-link" onClick={() => onOpenSub(area.id, it)}>
             <it.icon size={15} strokeWidth={1.9} style={{ color: "var(--muted)", flexShrink: 0 }} />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span>
             <ChevronRight size={14} className="rc" />
@@ -514,7 +531,7 @@ function VistaInicio() {
               .map((a) => (
               <DepartmentCard key={a.id} area={a}
                 onOpenArea={(id) => go({ view: "area", id })}
-                onOpenSub={(areaId, subId) => go({ view: "sub", areaId, subId })} />
+                onOpenSub={(areaId, it) => go(it.slug ? { view: "subarea", slug: it.slug } : { view: "sub", areaId, subId: it.id })} />
             ))}
           </div>
 
@@ -596,6 +613,13 @@ function VistaCEO() {
     const abiertas = tareas.filter((t) => t.estado !== "completada").length;
     const equipo = usuarios.filter((u) => ROLES[u.rol]?.tipo === "interno" && u.estado === "activo").length;
 
+    /* Si la consulta vuelve vacía es porque este usuario no es el CEO:
+       la base no le entrega las finanzas, no las escondemos nosotros. */
+    const plata = (clave) => {
+      const v = services.finanzas.valor(clave);
+      return v == null ? "—" : `USD ${Number(v).toLocaleString("es-AR")}`;
+    };
+
     const metricas = [
       { l: "Clientes activos", v: String(activos), d: `${clientes.length} en total`, t: "green" },
       { l: "Proyectos en curso", v: String(proyectos), d: `${abiertas} tareas abiertas`, t: "muted" },
@@ -605,10 +629,11 @@ function VistaCEO() {
       { l: "Cuentas con alertas", v: String(clientes.filter((c) => c.estado === "atencion" || c.salud < 65).length), d: "Salud por debajo de 65%", t: "orange" },
       { l: "Tareas trabadas", v: String(bloqueadas.length), d: bloqueadas.length ? "Necesitan destrabarse" : "Ninguna", t: bloqueadas.length ? "orange" : "green" },
       { l: "Esperando aprobación", v: String(enRevision.length), d: "En revisión ahora", t: "muted" },
-      { l: "Facturación del mes", v: "—", d: "Pendiente de conectar", t: "muted" },
-      { l: "MRR", v: "—", d: "Pendiente de conectar", t: "muted" },
+      /* Estas salen de la tabla de finanzas, que solo el CEO puede consultar. */
+      { l: "Facturación del mes", v: plata("facturacion"), d: plata("facturacion") === "—" ? "Cargala en Dirección" : "Período actual", t: "green" },
+      { l: "MRR", v: plata("mrr"), d: plata("mrr") === "—" ? "Cargalo en Dirección" : "Recurrente", t: "green" },
+      { l: "Margen", v: services.finanzas.valor("margen") != null ? `${services.finanzas.valor("margen")}%` : "—", d: "Sobre facturación", t: "green" },
       { l: "Conversión a cierre", v: "—", d: "Pendiente de conectar", t: "muted" },
-      { l: "Rentabilidad", v: "—", d: "Pendiente de conectar", t: "muted" },
     ];
 
     const atencion = [
@@ -810,6 +835,7 @@ function NuevoClienteModal({ onClose, onCrear }) {
 /* --- Client Hub --------------------------------------------------------- */
 const HUB_NAV = [
   { id: "resumen", label: "Resumen", icon: LayoutDashboard, solo: true },
+  { id: "portal", label: "Portal del cliente", icon: Lock, solo: true },
   { g: "Estrategia", items: [
     { id: "diagnostico", label: "Diagnóstico" }, { id: "oferta", label: "Oferta" },
     { id: "posicionamiento", label: "Posicionamiento" }, { id: "arquitectura", label: "Arquitectura" }, { id: "roadmap", label: "Roadmap" }] },
@@ -886,6 +912,7 @@ function VistaClienteHub({ id, tabInicial, modoCliente = false }) {
 
   const contenidoSeccion = () => {
     if (sec === "resumen") return <HubResumen cliente={cliente} tareas={tareas} equipo={equipo} onGo={setSec} />;
+    if (sec === "portal") return <HubPortal cliente={cliente} />;
     if (sec === "tareas") return tareas.length
       ? <div className="card">{tareas.map((t) => <TaskCard key={t.id} tarea={t} onToggle={(id) => cambiarEstadoTarea(id, t.estado === "completada" ? "curso" : "completada")} />)}</div>
       : <div className="card"><Empty icon={CheckSquare} titulo="Sin tareas abiertas" texto="Cuando se asigne trabajo para este cliente, va a aparecer acá." cta="Crear tarea" /></div>;
@@ -983,6 +1010,12 @@ function VistaClienteHub({ id, tabInicial, modoCliente = false }) {
             onClick={() => setSec("resumen")}>
             <LayoutDashboard size={15} /> Resumen
           </button>
+          {!modoCliente && (
+            <button className="row-link" style={sec === "portal" ? { background: "var(--blue-soft)", color: "var(--blue)", fontWeight: 600 } : undefined}
+              onClick={() => setSec("portal")}>
+              <Lock size={15} /> Portal del cliente
+            </button>
+          )}
           {nav.filter((g) => !g.solo).map((g) => (
             <div key={g.g}>
               <button className="row-link" onClick={() => toggle(g.g)} style={{ fontWeight: 600, fontSize: 12.5 }}>
@@ -1113,11 +1146,11 @@ function VistaArea({ id }) {
           <p className="sub">{area.desc}</p>
         </div>
       </div>
-      <SectionHead title={`${area.items.length} módulos`} />
+      <SectionHead title={`${itemsDeArea(area).length} etapas`} />
       <div className="grid g3">
-        {area.items.map((it) => (
+        {itemsDeArea(area).map((it) => (
           <button key={it.id} className="card card-pad card-hover" style={{ display: "flex", gap: 12, alignItems: "center", textAlign: "left" }}
-            onClick={() => go(it.view ? { view: it.view } : { view: "sub", areaId: area.id, subId: it.id })}>
+            onClick={() => go(it.slug ? { view: "subarea", slug: it.slug } : it.view ? { view: it.view } : { view: "sub", areaId: area.id, subId: it.id })}>
             <span className="stat-ico" style={{ width: 40, height: 40, background: t.bg, color: t.fg }}><it.icon size={18} /></span>
             <span style={{ minWidth: 0, flex: 1 }}>
               <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{it.name}</span>
@@ -1752,11 +1785,15 @@ function VistaConfig() {
   );
 }
 
-/* --- Portal del cliente (rol Cliente) ----------------------------------- */
+/* --- Portal del cliente -------------------------------------------------
+   El cliente ve el recorrido completo desde el primer día: sabe dónde está,
+   qué ya hicimos y qué viene después. Los candados son reales: el contenido
+   de un módulo cerrado ni siquiera llega a su navegador (lo frena RLS).   */
 function VistaPortalCliente() {
-  const { perfil } = useApp();
+  const { perfil, mostrar } = useApp();
   const misOrgs = services.membresias.porUsuario(perfil.id);
   const [orgId, setOrgId] = useState(misOrgs[0]?.org.id || null);
+  const [abierto, setAbierto] = useState(null);
 
   if (!orgId) return (
     <div className="card" style={{ maxWidth: 520 }}>
@@ -1765,17 +1802,129 @@ function VistaPortalCliente() {
     </div>
   );
 
+  const cliente = services.clientes.get(orgId);
+  const modulos = services.modulosCliente.byOrg(orgId);
+  const grupos = [...new Set(modulos.map((m) => m.grupo))];
+  const listos = modulos.filter((m) => m.estado === "disponible").length;
+  const pct = modulos.length ? Math.round((listos / modulos.length) * 100) : 0;
+  const pendientesDeEl = modulos.filter((m) => m.requiereCliente && m.estado === "disponible");
+
   return (
     <>
+      <div style={{ marginBottom: 20 }}>
+        <h1 className="h1">Hola, {perfil.nombre} 👋</h1>
+        <p className="sub">Este es el espacio de {cliente?.nombre}. Acá está todo lo que estamos haciendo con tu marca.</p>
+      </div>
+
       {misOrgs.length > 1 && (
         <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
           {misOrgs.map((m) => (
-            <button key={m.org.id} className={`pill ${orgId === m.org.id ? "on" : ""}`} onClick={() => setOrgId(m.org.id)}>{m.org.nombre}</button>
+            <button key={m.org.id} className={`pill ${orgId === m.org.id ? "on" : ""}`}
+              onClick={() => { setOrgId(m.org.id); setAbierto(null); }}>{m.org.nombre}</button>
           ))}
         </div>
       )}
-      <VistaClienteHub id={orgId} modoCliente />
+
+      {pendientesDeEl.length > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 18, borderColor: "var(--blue-light)", background: "var(--blue-soft)" }}>
+          <div style={{ display: "flex", gap: 11, alignItems: "center", flexWrap: "wrap" }}>
+            <Flag size={17} style={{ color: "var(--blue)", flexShrink: 0 }} />
+            <span style={{ fontSize: 13.4, flex: 1, minWidth: 200 }}>
+              {pendientesDeEl.length === 1
+                ? `Necesitamos algo de tu lado: ${pendientesDeEl[0].nombre.toLowerCase()}.`
+                : `Necesitamos ${pendientesDeEl.length} cosas de tu lado para poder avanzar.`}
+            </span>
+            <button className="btn btn-primary btn-sm" onClick={() => setAbierto(pendientesDeEl[0].id)}>
+              Ver qué falta
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="card card-pad" style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+          <div className="eyebrow">Tu proceso con nosotros</div>
+          <span className="mini" style={{ marginLeft: "auto" }}>{listos} de {modulos.length} etapas abiertas</span>
+        </div>
+        <span className="bar" style={{ display: "block" }}>
+          <span style={{ width: `${pct}%` }} />
+        </span>
+      </div>
+
+      {grupos.map((g) => (
+        <div key={g} style={{ marginBottom: 22 }}>
+          <SectionHead title={g} />
+          <div className="grid g3">
+            {modulos.filter((m) => m.grupo === g).map((m) => {
+              const e = ESTADOS_MODULO[m.estado] || ESTADOS_MODULO.bloqueado;
+              const cerrado = m.estado === "bloqueado";
+              return (
+                <button key={m.id} className="card card-pad card-hover" onClick={() => !cerrado && setAbierto(m.id)}
+                  style={{ textAlign: "left", opacity: cerrado ? .62 : 1, cursor: cerrado ? "default" : "pointer" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 9 }}>
+                    <span className="stat-ico" style={{ width: 34, height: 34, background: TONE[e.tone].bg, color: TONE[e.tone].fg }}>
+                      <e.icon size={16} />
+                    </span>
+                    <StatusBadge tone={e.tone} dot>{e.label}</StatusBadge>
+                  </div>
+                  <div className="h3">{m.nombre}</div>
+                  <div className="mini" style={{ marginTop: 4, lineHeight: 1.5 }}>{m.descripcion}</div>
+                  {m.requiereCliente && !cerrado && (
+                    <div className="mini" style={{ marginTop: 8, color: "var(--blue)", fontWeight: 600 }}>Necesitamos algo tuyo</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {abierto && <ModuloClienteModal moduloId={abierto} onClose={() => setAbierto(null)} onAviso={mostrar} />}
     </>
+  );
+}
+
+function ModuloClienteModal({ moduloId, onClose, onAviso }) {
+  const m = services.modulosCliente.get(moduloId);
+  const bloques = services.contenidoModulo.byModulo(moduloId);
+  if (!m) return null;
+  const e = ESTADOS_MODULO[m.estado] || ESTADOS_MODULO.bloqueado;
+
+  return (
+    <div className="overlay" onMouseDown={(ev) => ev.target === ev.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 620 }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <StatusBadge tone={e.tone} dot>{e.label}</StatusBadge>
+            <div className="h2" style={{ marginTop: 7 }}>{m.nombre}</div>
+            <div className="mini" style={{ marginTop: 3 }}>{m.descripcion}</div>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="Cerrar"><X size={17} /></button>
+        </div>
+
+        <div style={{ padding: 20, maxHeight: "56vh", overflowY: "auto" }}>
+          {m.accionTexto && (
+            <button className="btn btn-primary" style={{ width: "100%", marginBottom: bloques.length ? 18 : 0 }}
+              onClick={() => {
+                if (!m.accionUrl) { onAviso("Todavía estamos preparando este paso. Te avisamos apenas esté listo."); return; }
+                window.open(m.accionUrl, "_blank", "noopener,noreferrer");
+              }}>
+              <ExternalLink size={15} /> {m.accionTexto}
+            </button>
+          )}
+
+          {bloques.length === 0 ? (
+            <Empty icon={Clock} titulo="Estamos preparando esta parte"
+              texto="Cuando esté lista la vas a ver acá, y te avisamos." />
+          ) : bloques.map((b) => (
+            <div key={b.id} style={{ marginBottom: 18 }}>
+              <div className="eyebrow" style={{ marginBottom: 5 }}>{b.bloque}</div>
+              <p style={{ fontSize: 13.6, lineHeight: 1.65, margin: 0 }}>{b.cuerpo}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2014,6 +2163,433 @@ function InvitarUsuarioModal({ onClose, onInvitar }) {
   );
 }
 
+
+/* --- Subárea: el patrón "centro de control" -----------------------------
+   Responde siempre las cuatro preguntas: qué, cómo, dónde y en qué estado.
+   El OS no ejecuta el trabajo: dice qué hay que hacer y abre la herramienta
+   donde se hace.                                                          */
+const ESTADOS_MODULO = {
+  bloqueado:    { label: "Bloqueado",      tone: "gray",   icon: Lock },
+  preparacion:  { label: "En preparación", tone: "orange", icon: Clock },
+  progreso:     { label: "En progreso",    tone: "blue",   icon: Activity },
+  revision:     { label: "En revisión",    tone: "violet", icon: Eye },
+  disponible:   { label: "Disponible",     tone: "green",  icon: CheckCircle2 },
+};
+
+function VistaSubarea({ slug }) {
+  const { go, perfil, clientesVisibles, guardarAvance, version, mostrar } = useApp();
+  const sub = services.subareas.get(slug);
+  const [orgId, setOrgId] = useState(clientesVisibles[0]?.id || null);
+  const [guardando, setGuardando] = useState(false);
+
+  if (!sub) return <SinAcceso texto="Esta subárea todavía no está definida en el sistema." onVolver={() => go({ view: "inicio" })} />;
+
+  const area = AREAS.find((a) => a.id === sub.area);
+  const tone = TONE[area?.tone || "blue"];
+  const cliente = clientesVisibles.find((c) => c.id === orgId);
+  const avance = orgId ? services.estados.get(orgId, sub.id) : null;
+  const hechos = avance?.hechos || [];
+  const estado = avance?.estado || "pendiente";
+  const listos = hechos.length;
+  const total = sub.checklist.length;
+  const pct = total ? Math.round((listos / total) * 100) : 0;
+
+  /* La herramienta y los documentos salen de Recursos: enlaces configurables,
+     nunca escritos en el código. */
+  const herramienta = sub.herramienta ? services.recursos.porNombre(sub.herramienta) : null;
+  const documentos = orgId ? services.recursos.deSubarea(sub.slug, orgId) : [];
+
+  const marcar = async (i) => {
+    if (!orgId) return;
+    const nuevos = hechos.includes(i) ? hechos.filter((x) => x !== i) : [...hechos, i].sort((a, b) => a - b);
+    const nuevoEstado = nuevos.length === 0 ? "pendiente" : nuevos.length === total ? "completada" : "curso";
+    setGuardando(true);
+    try { await guardarAvance(orgId, sub.id, { hechos: nuevos, estado: nuevoEstado }); }
+    finally { setGuardando(false); }
+  };
+
+  const cambiarEstado = async (nuevo) => {
+    if (!orgId) return;
+    setGuardando(true);
+    try { await guardarAvance(orgId, sub.id, { estado: nuevo }); }
+    finally { setGuardando(false); }
+  };
+
+  const abrir = (r) => {
+    if (!r?.url) { mostrar(`${r?.nombre || "Esa herramienta"} todavía no tiene enlace cargado. Cargalo en Configuración → Recursos.`); return; }
+    window.open(r.url, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap" }}>
+        <span className="area-ico" style={{ width: 48, height: 48, background: tone.fg, color: "#fff" }}>
+          <ListChecks size={22} />
+        </span>
+        <div style={{ minWidth: 220, flex: 1 }}>
+          <h1 className="h1" style={{ fontSize: 23 }}>{sub.nombre}</h1>
+          <p className="sub">{sub.descripcion}</p>
+        </div>
+        {clientesVisibles.length > 0 && (
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 5 }}>Para qué cuenta</div>
+            <select style={{ ...inputStyle, minWidth: 190 }} value={orgId || ""} onChange={(e) => setOrgId(e.target.value)}>
+              {clientesVisibles.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="split">
+        <div className="col">
+          <div className="card card-pad" style={{ marginBottom: 16 }}>
+            <div className="grid g2" style={{ gap: 18 }}>
+              <div>
+                <div className="eyebrow">Objetivo</div>
+                <div style={{ fontSize: 13.5, marginTop: 4, lineHeight: 1.55 }}>{sub.objetivo}</div>
+              </div>
+              <div>
+                <div className="eyebrow">Responsable</div>
+                <div style={{ fontSize: 13.5, marginTop: 4, fontWeight: 600 }}>{ROLES[sub.rol]?.label || "Sin asignar"}</div>
+              </div>
+              <div>
+                <div className="eyebrow">Qué entra</div>
+                <div style={{ fontSize: 13.5, marginTop: 4, lineHeight: 1.55 }}>{sub.entra}</div>
+              </div>
+              <div>
+                <div className="eyebrow">Qué tiene que quedar</div>
+                <div style={{ fontSize: 13.5, marginTop: 4, lineHeight: 1.55 }}>{sub.resultado}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div style={{ padding: "15px 18px 10px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div className="eyebrow">Checklist{cliente ? ` · ${cliente.nombre}` : ""}</div>
+              <span className="mini" style={{ marginLeft: "auto" }}>{listos} de {total}</span>
+              <span className="bar" style={{ width: 90 }}>
+                <span style={{ width: `${pct}%`, background: pct === 100 ? "var(--green)" : "var(--blue)" }} />
+              </span>
+            </div>
+            <div style={{ padding: "0 8px 10px" }}>
+              {sub.checklist.map((paso, i) => {
+                const hecho = hechos.includes(i);
+                return (
+                  <button key={i} className="row-link" onClick={() => marcar(i)} disabled={!orgId || guardando}
+                    style={{ padding: "9px 10px", opacity: guardando ? .6 : 1 }}>
+                    <span className={`check ${hecho ? "done" : ""}`} style={{ width: 18, height: 18 }}>
+                      {hecho && <Check size={12} strokeWidth={3} />}
+                    </span>
+                    <span style={{ fontSize: 13.3, textDecoration: hecho ? "line-through" : "none", opacity: hecho ? .55 : 1 }}>
+                      {paso}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <hr className="divider" />
+            <div style={{ padding: "12px 18px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <span className="eyebrow">Estado</span>
+              {Object.entries(ESTADOS).map(([k, v]) => (
+                <button key={k} className={`pill ${estado === k ? "on" : ""}`} disabled={!orgId || guardando}
+                  onClick={() => cambiarEstado(k)}>{v.label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <aside className="rail">
+          <div className="card card-pad">
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Dónde se ejecuta</div>
+            {herramienta ? (
+              <>
+                <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => abrir(herramienta)}>
+                  <ExternalLink size={15} /> Abrir {herramienta.nombre}
+                </button>
+                {!herramienta.url && (
+                  <p className="mini" style={{ marginTop: 9, lineHeight: 1.5 }}>
+                    Todavía sin enlace. Cargalo una vez en Configuración → Recursos y queda para siempre.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="mini" style={{ lineHeight: 1.5 }}>
+                Esta etapa no depende de una herramienta externa: se resuelve dentro del OS.
+              </p>
+            )}
+          </div>
+
+          <div className="card">
+            <div style={{ padding: "15px 16px 6px", display: "flex", alignItems: "center" }}>
+              <div className="eyebrow">Documentos de la cuenta</div>
+              <button className="mini" style={{ marginLeft: "auto", color: "var(--blue)", fontWeight: 600 }}
+                onClick={() => go({ view: "recursos" })}>Administrar</button>
+            </div>
+            <div style={{ padding: "0 8px 10px" }}>
+              {documentos.length === 0 ? (
+                <p className="mini" style={{ padding: "6px 10px 10px", lineHeight: 1.5 }}>
+                  Sin documentos cargados para {cliente ? cliente.nombre : "esta cuenta"}. Podés sumar la planilla, la carpeta o el template que se use acá.
+                </p>
+              ) : documentos.map((d) => (
+                <button key={d.id} className="row-link" onClick={() => abrir(d)}>
+                  <FileText size={15} style={{ color: "var(--muted)" }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.nombre}</span>
+                  <ExternalLink size={13} className="rc" />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="card card-pad">
+            <div className="eyebrow" style={{ marginBottom: 8 }}>Otras etapas de {area?.name}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              {services.subareas.byArea(sub.area).filter((x) => x.slug !== slug).map((x) => (
+                <button key={x.slug} className="row-link" style={{ fontSize: 12.8 }}
+                  onClick={() => go({ view: "subarea", slug: x.slug })}>
+                  {x.nombre}<ChevronRight size={13} className="rc" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+      </div>
+    </>
+  );
+}
+
+
+/* --- Recursos: los enlaces del sistema, editables sin tocar código ------ */
+function VistaRecursos() {
+  const { go, perfil, clientesVisibles, recursos, guardarRecurso, crearRecurso, borrarRecurso, mostrar } = useApp();
+  const [ambito, setAmbito] = useState("global");
+  const [editando, setEditando] = useState(null);
+  const [borrador, setBorrador] = useState("");
+  const [nuevo, setNuevo] = useState(false);
+
+  const lista = ambito === "global"
+    ? recursos.filter((r) => !r.org)
+    : recursos.filter((r) => r.org === ambito);
+  const sinEnlace = lista.filter((r) => !r.url).length;
+
+  const guardar = async (r) => {
+    try { await guardarRecurso(r.id, { url: borrador.trim() || null }); setEditando(null); mostrar(`Enlace de ${r.nombre} guardado.`); }
+    catch (e) { mostrar(e.message); }
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
+        <div>
+          <h1 className="h1">Recursos</h1>
+          <p className="sub">Cada enlace del sistema vive acá. Cambiás uno y cambia en todas las pantallas.</p>
+        </div>
+        <button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={() => setNuevo(true)}>
+          <Plus size={15} /> Nuevo recurso
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <button className={`pill ${ambito === "global" ? "on" : ""}`} onClick={() => setAmbito("global")}>
+          Herramientas de la agencia
+        </button>
+        {clientesVisibles.map((c) => (
+          <button key={c.id} className={`pill ${ambito === c.id ? "on" : ""}`} onClick={() => setAmbito(c.id)}>{c.nombre}</button>
+        ))}
+      </div>
+
+      {sinEnlace > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 16, display: "flex", gap: 11, alignItems: "center",
+          borderColor: "var(--orange)", background: "var(--orange-soft)" }}>
+          <AlertCircle size={17} style={{ color: "var(--orange)", flexShrink: 0 }} />
+          <span style={{ fontSize: 13.2, flex: 1 }}>
+            {sinEnlace} {sinEnlace === 1 ? "recurso todavía no tiene enlace" : "recursos todavía no tienen enlace"}. Hasta que lo cargues, el botón de abrir no lleva a ningún lado.
+          </span>
+        </div>
+      )}
+
+      <div className="card">
+        {lista.length === 0 ? (
+          <Empty icon={Link2} titulo="Todavía no hay recursos acá"
+            texto="Sumá la carpeta de Drive, la planilla de presupuesto o el formulario de onboarding de esta cuenta."
+            cta="Nuevo recurso" onCta={() => setNuevo(true)} />
+        ) : lista.map((r) => (
+          <div key={r.id} className="list-row" style={{ alignItems: "flex-start" }}>
+            <span style={{ width: 30, height: 30, borderRadius: 8, background: r.color, color: "#fff", display: "flex",
+              alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, flexShrink: 0, marginTop: 2 }}>
+              {r.nombre.slice(0, 1)}
+            </span>
+            <span style={{ width: 170, flexShrink: 0, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 13.3, fontWeight: 600 }}>{r.nombre}</span>
+              <span className="mini" style={{ display: "block" }}>{r.descripcion || r.tipo}</span>
+            </span>
+            <span style={{ flex: 1, minWidth: 140 }}>
+              {editando === r.id ? (
+                <div style={{ display: "flex", gap: 7 }}>
+                  <input style={inputStyle} value={borrador} autoFocus placeholder="Pegá el enlace exacto"
+                    onChange={(e) => setBorrador(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && guardar(r)} />
+                  <button className="btn btn-primary btn-sm" onClick={() => guardar(r)}>Guardar</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditando(null)}>Cancelar</button>
+                </div>
+              ) : (
+                <button className="row-link" style={{ padding: "6px 9px" }}
+                  onClick={() => { setEditando(r.id); setBorrador(r.url); }}>
+                  {r.url
+                    ? <span className="mini" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.url}</span>
+                    : <span className="mini" style={{ fontStyle: "italic" }}>Sin enlace — clic para cargarlo</span>}
+                </button>
+              )}
+            </span>
+            {r.url && <StatusBadge tone="green" dot>Listo</StatusBadge>}
+            {r.org && (
+              <button className={`pill ${r.visibleCliente ? "on" : ""}`}
+                onClick={() => guardarRecurso(r.id, { visible_cliente: !r.visibleCliente }).catch((e) => mostrar(e.message))}>
+                {r.visibleCliente ? "Lo ve el cliente" : "Solo interno"}
+              </button>
+            )}
+            {puede(perfil.rol, "*") && (
+              <button className="icon-btn" style={{ width: 30, height: 30 }} title="Borrar"
+                onClick={() => borrarRecurso(r.id)}><X size={14} /></button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {nuevo && (
+        <NuevoRecursoModal
+          clientes={clientesVisibles}
+          ambito={ambito}
+          onClose={() => setNuevo(false)}
+          onCrear={async (d) => { try { await crearRecurso(d); setNuevo(false); } catch (e) { mostrar(e.message); } }}
+        />
+      )}
+    </>
+  );
+}
+
+function NuevoRecursoModal({ clientes, ambito, onClose, onCrear }) {
+  const [f, setF] = useState({
+    nombre: "", tipo: "documento", url: "", descripcion: "",
+    org: ambito === "global" ? "" : ambito, area: "", subarea: "", visibleCliente: false,
+  });
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const subareas = f.area ? services.subareas.byArea(f.area) : [];
+  const listo = f.nombre.trim().length > 1;
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 560 }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+          <div>
+            <div className="h2">Nuevo recurso</div>
+            <div className="mini" style={{ marginTop: 2 }}>Un documento, una carpeta o una herramienta que el equipo necesita abrir.</div>
+          </div>
+          <button className="icon-btn" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Cerrar"><X size={17} /></button>
+        </div>
+
+        <div style={{ padding: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, maxHeight: "56vh", overflowY: "auto" }}>
+          <Campo label="Nombre" ancho>
+            <input style={inputStyle} value={f.nombre} onChange={(e) => set("nombre", e.target.value)}
+              placeholder="Presupuesto campañas agosto" autoFocus />
+          </Campo>
+          <Campo label="Tipo">
+            <select style={inputStyle} value={f.tipo} onChange={(e) => set("tipo", e.target.value)}>
+              {["documento", "sheet", "doc", "pdf", "carpeta", "formulario", "herramienta", "enlace"].map((t) => <option key={t}>{t}</option>)}
+            </select>
+          </Campo>
+          <Campo label="De quién es">
+            <select style={inputStyle} value={f.org} onChange={(e) => set("org", e.target.value)}>
+              <option value="">De la agencia</option>
+              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Enlace" ancho>
+            <input style={inputStyle} value={f.url} onChange={(e) => set("url", e.target.value)}
+              placeholder="Pegá la dirección exacta" />
+          </Campo>
+          <Campo label="Área">
+            <select style={inputStyle} value={f.area} onChange={(e) => { set("area", e.target.value); set("subarea", ""); }}>
+              <option value="">Sin área</option>
+              {AREAS.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Etapa">
+            <select style={inputStyle} value={f.subarea} onChange={(e) => set("subarea", e.target.value)} disabled={!subareas.length}>
+              <option value="">{subareas.length ? "Sin etapa" : "Elegí un área primero"}</option>
+              {subareas.map((x) => <option key={x.slug} value={x.slug}>{x.nombre}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Para qué sirve" ancho>
+            <input style={inputStyle} value={f.descripcion} onChange={(e) => set("descripcion", e.target.value)}
+              placeholder="Una línea alcanza" />
+          </Campo>
+          {f.org && (
+            <Campo label="¿Lo ve el cliente?" ancho>
+              <button className={`pill ${f.visibleCliente ? "on" : ""}`} onClick={() => set("visibleCliente", !f.visibleCliente)}>
+                {f.visibleCliente ? "Sí, aparece en su portal" : "No, solo lo ve el equipo"}
+              </button>
+            </Campo>
+          )}
+        </div>
+
+        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary btn-sm" disabled={!listo} style={!listo ? { opacity: .5, cursor: "not-allowed" } : undefined}
+            onClick={() => listo && onCrear(f)}>Crear recurso</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* --- Qué ve el cliente: el equipo abre y cierra cada módulo ------------- */
+function HubPortal({ cliente }) {
+  const { cambiarEstadoModulo, version, mostrar } = useApp();
+  const modulos = useMemo(() => services.modulosCliente.byOrg(cliente.id), [cliente.id, version]);
+  const abiertos = modulos.filter((m) => m.estado === "disponible").length;
+
+  if (!modulos.length) return (
+    <div className="card"><Empty icon={Lock} titulo="Este cliente todavía no tiene portal"
+      texto="Se crea solo al dar de alta la organización. Si falta, avisá a Dirección." /></div>
+  );
+
+  return (
+    <>
+      <div className="card card-pad" style={{ marginBottom: 16, display: "flex", gap: 11, alignItems: "center", flexWrap: "wrap" }}>
+        <Eye size={17} style={{ color: "var(--blue)", flexShrink: 0 }} />
+        <span style={{ fontSize: 13.3, flex: 1, minWidth: 220 }}>
+          Esto es exactamente lo que ve {cliente.nombre} al entrar. Lo que dejes en bloqueado no le llega, ni siquiera por debajo.
+        </span>
+        <StatusBadge tone="green" dot>{abiertos} de {modulos.length} abiertos</StatusBadge>
+      </div>
+
+      <div className="card">
+        {modulos.map((m) => (
+          <div key={m.id} className="list-row" style={{ alignItems: "center" }}>
+            <span style={{ width: 190, flexShrink: 0, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 13.4, fontWeight: 600 }}>{m.nombre}</span>
+              <span className="mini" style={{ display: "block", marginTop: 2 }}>{m.grupo}</span>
+            </span>
+            <span className="mini" style={{ flex: 1, minWidth: 120 }}>{m.descripcion}</span>
+            <span style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {Object.entries(ESTADOS_MODULO).map(([k, v]) => (
+                <button key={k} className={`pill ${m.estado === k ? "on" : ""}`}
+                  style={{ padding: "5px 9px", fontSize: 11.5 }}
+                  onClick={() => cambiarEstadoModulo(m.id, k)}>{v.label}</button>
+              ))}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <p className="mini" style={{ marginTop: 12, lineHeight: 1.55, maxWidth: 620 }}>
+        El cliente nunca puede abrir un módulo por su cuenta. El recorrido avanza cuando el equipo lo decide.
+      </p>
+    </>
+  );
+}
+
 function SinAcceso({ texto, onVolver }) {
   return (
     <div className="card" style={{ maxWidth: 520 }}>
@@ -2225,10 +2801,12 @@ function Sidebar({ open, onClose }) {
               {abierta && (
                 <div className="nav-sub">
                   <button onClick={() => nav({ view: "area", id: a.id })}>Ver todo</button>
-                  {a.items.map((it) => (
+                  {itemsDeArea(a).map((it) => (
                     <button key={it.id}
-                      className={route.view === "sub" && route.subId === it.id && route.areaId === a.id ? "active" : ""}
-                      onClick={() => nav(it.view ? { view: it.view } : { view: "sub", areaId: a.id, subId: it.id })}>
+                      className={(route.view === "subarea" && route.slug === it.slug)
+                        || (route.view === "sub" && route.subId === it.id && route.areaId === a.id) ? "active" : ""}
+                      onClick={() => nav(it.slug ? { view: "subarea", slug: it.slug }
+                        : it.view ? { view: it.view } : { view: "sub", areaId: a.id, subId: it.id })}>
                       {it.name}
                     </button>
                   ))}
@@ -2241,6 +2819,11 @@ function Sidebar({ open, onClose }) {
         {ver("herramientas") && (
           <button className={`nav-item ${esActivo("herramientas") ? "active" : ""}`} style={{ marginTop: 6 }} onClick={() => nav({ view: "herramientas" })}>
             <Link2 size={17} strokeWidth={2} /> Herramientas
+          </button>
+        )}
+        {ver("herramientas") && (
+          <button className={`nav-item ${esActivo("recursos") ? "active" : ""}`} onClick={() => nav({ view: "recursos" })}>
+            <Layers size={17} strokeWidth={2} /> Recursos
           </button>
         )}
         {ver("admin") && (
@@ -2294,6 +2877,13 @@ function Header({ onMenu, onSearch }) {
       case "biblioteca": c.push({ l: "Biblioteca", now: true }); break;
       case "prompts": c.push({ l: "Biblioteca", to: { view: "biblioteca" } }, { l: "Prompts", now: true }); break;
       case "automatizaciones": c.push({ l: "Automatización / IA", to: { view: "area", id: "ia" } }, { l: "Automatizaciones", now: true }); break;
+      case "subarea": {
+        const sa = services.subareas.get(route.slug);
+        const ar = AREAS.find((x) => x.id === sa?.area);
+        c.push({ l: ar?.name || "Área", to: { view: "area", id: sa?.area } }, { l: sa?.nombre || "", now: true });
+        break;
+      }
+      case "recursos": c.push({ l: "Recursos", now: true }); break;
       case "admin": c.push({ l: "Administración", now: true }); break;
       case "config": c.push({ l: "Configuración", now: true }); break;
       default: break;
@@ -2337,6 +2927,7 @@ export default function MarketingEnFlujoOS() {
   const [errorCarga, setErrorCarga] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
   const [invitaciones, setInvitaciones] = useState([]);
+  const [recursos, setRecursos] = useState([]);
   const [verComo, setVerComo] = useState(null);
   const [version, setVersion] = useState(0);
   const [now, setNow] = useState(new Date());
@@ -2373,6 +2964,7 @@ export default function MarketingEnFlujoOS() {
         setUsuarios(datos.usuarios);
         setInvitaciones(datos.invitaciones);
         setNotis(datos.notificaciones);
+        setRecursos(datos.recursos);
         setVersion((v) => v + 1);
         auth.registrarAcceso(p.id);
       } catch (e) {
@@ -2455,6 +3047,32 @@ export default function MarketingEnFlujoOS() {
     catch (e) { mostrar(e.message); }
   };
 
+  const guardarAvance = async (orgId, subareaId, cambios) => {
+    try { await acciones.guardarAvance(orgId, subareaId, cambios); setVersion((v) => v + 1); }
+    catch (e) { mostrar(e.message); }
+  };
+
+  const guardarRecurso = async (id, campos) => {
+    await acciones.guardarRecurso(id, campos);
+    setRecursos([...services.recursos.list()]);
+  };
+
+  const crearRecurso = async (d) => {
+    await acciones.crearRecurso(d);
+    setRecursos([...services.recursos.list()]);
+    mostrar("Recurso creado. Ya aparece en la etapa donde lo asignaste.");
+  };
+
+  const borrarRecurso = async (id) => {
+    try { await acciones.borrarRecurso(id); setRecursos([...services.recursos.list()]); }
+    catch (e) { mostrar(e.message); }
+  };
+
+  const cambiarEstadoModulo = async (moduleId, estado) => {
+    try { await acciones.cambiarEstadoModulo(moduleId, estado); setVersion((v) => v + 1); }
+    catch (e) { mostrar(e.message); }
+  };
+
   const cambiarEstadoTarea = async (id, estado) => {
     try { await acciones.cambiarEstadoTarea(id, estado); setVersion((v) => v + 1); }
     catch (e) { mostrar(e.message); }
@@ -2471,6 +3089,7 @@ export default function MarketingEnFlujoOS() {
     session, perfil, rolActivo, setVerComo, verComo, salir,
     usuarios, invitaciones, invitar, cambiarEstadoUsuario, cambiarRolUsuario, cambiarEstadoTarea,
     clientesVisibles, getCliente, accesoA, crearCliente, version,
+    recursos, guardarAvance, guardarRecurso, crearRecurso, borrarRecurso, cambiarEstadoModulo,
   };
 
   const esCliente = perfil ? ROLES[rolActivo].tipo === "cliente" : false;
@@ -2506,6 +3125,10 @@ export default function MarketingEnFlujoOS() {
       case "biblioteca": return <VistaBiblioteca />;
       case "prompts": return <VistaPrompts />;
       case "automatizaciones": return <VistaAutomatizaciones />;
+      case "subarea": return <VistaSubarea slug={route.slug} />;
+      case "recursos": return puede(rolActivo, "herramientas")
+        ? <VistaRecursos />
+        : <SinAcceso texto="Los recursos los administra el equipo interno." onVolver={() => go({ view: "inicio" })} />;
       case "admin": return <VistaAdmin />;
       case "config": return <VistaConfig />;
       default: return <VistaInicio />;

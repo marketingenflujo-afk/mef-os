@@ -16,6 +16,7 @@ const cache = {
   clientes: [], usuarios: [], membresias: [], tareas: [], proyectos: [],
   contenido: [], campanas: [], reuniones: [], metricas: [],
   procesos: [], sops: [], invitaciones: [], eventos: [], notificaciones: [],
+  subareas: [], estados: [], recursos: [], modulosCliente: [], contenidoModulos: [], finanzas: [],
 };
 
 export const store = cache;
@@ -59,6 +60,36 @@ export const services = {
   sops: { list: () => cache.sops, get: (id) => cache.sops.find((s) => s.id === id) },
   invitaciones: { list: () => cache.invitaciones },
   notificaciones: { list: () => cache.notificaciones },
+
+  /* --- La arquitectura nueva: el OS dirige, las herramientas ejecutan --- */
+  subareas: {
+    list: () => cache.subareas,
+    byArea: (area) => cache.subareas.filter((s) => s.area === area).sort((a, b) => a.orden - b.orden),
+    get: (slug) => cache.subareas.find((s) => s.slug === slug),
+  },
+  estados: {
+    /* El catálogo es uno; el avance es por cuenta. */
+    get: (orgId, subareaId) => cache.estados.find((e) => e.org === orgId && e.subarea === subareaId),
+    bySubarea: (subareaId) => cache.estados.filter((e) => e.subarea === subareaId),
+  },
+  recursos: {
+    list: () => cache.recursos,
+    globales: () => cache.recursos.filter((r) => !r.org),
+    porNombre: (nombre) => cache.recursos.find((r) => !r.org && r.nombre === nombre),
+    deSubarea: (slug, orgId) => cache.recursos.filter((r) => r.subarea === slug && (orgId ? r.org === orgId : !r.org)),
+    deOrg: (orgId) => cache.recursos.filter((r) => r.org === orgId),
+  },
+  modulosCliente: {
+    byOrg: (orgId) => cache.modulosCliente.filter((m) => m.org === orgId).sort((a, b) => a.orden - b.orden),
+    get: (id) => cache.modulosCliente.find((m) => m.id === id),
+  },
+  contenidoModulo: {
+    byModulo: (moduleId) => cache.contenidoModulos.filter((c) => c.modulo === moduleId).sort((a, b) => a.orden - b.orden),
+  },
+  finanzas: {
+    list: () => cache.finanzas,
+    valor: (clave) => { const f = cache.finanzas.find((x) => x.clave === clave); return f ? Number(f.valor) : null; },
+  },
   eventos: { list: () => cache.eventos },
 
   /* Catálogo de la interfaz: no vive en la base todavía. */
@@ -70,7 +101,8 @@ export const services = {
 
 /* --- Carga inicial ------------------------------------------------------ */
 export async function cargarDatos() {
-  const [orgs, miembros, perfiles, tareas, proyectos, contenido, campanas, reuniones, metricas, procesos, sops, invitaciones, notificaciones] =
+  const [orgs, miembros, perfiles, tareas, proyectos, contenido, campanas, reuniones, metricas, procesos, sops, invitaciones, notificaciones,
+         subareas, estados, recursos, modulosCliente, contenidoModulos, finanzas] =
     await Promise.all([
       sel("organizations", "*"),
       sel("organization_members", "*"),
@@ -85,6 +117,12 @@ export async function cargarDatos() {
       sel("sops", "*"),
       sel("invitations", "*"),
       sel("notifications", "*"),
+      sel("subareas", "*"),
+      sel("subarea_estados", "*"),
+      sel("resources", "*"),
+      sel("client_modules", "*"),
+      sel("client_module_content", "*"),
+      sel("finances", "*"),
     ]);
 
   cache.usuarios = perfiles.map(mapPerfil).sort((a, b) => a.nombre.localeCompare(b.nombre));
@@ -106,6 +144,33 @@ export async function cargarDatos() {
   cache.notificaciones = notificaciones
     .sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en))
     .map((n) => ({ id: n.id, tono: n.tono, titulo: n.titulo, detalle: n.detalle || "", tiempo: relativo(n.creado_en), leida: n.leida }));
+  cache.subareas = subareas.map((s) => ({
+    id: s.id, slug: s.slug, area: s.area, nombre: s.nombre, descripcion: s.descripcion,
+    objetivo: s.objetivo, entra: s.que_entra, resultado: s.resultado,
+    rol: s.responsable_rol, herramienta: s.herramienta,
+    checklist: s.checklist || [], orden: s.orden,
+  }));
+  cache.estados = estados.map((e) => ({
+    id: e.id, org: e.organization_id, subarea: e.subarea_id, estado: e.estado,
+    responsable: e.responsable_id, hechos: e.hechos || [], nota: e.nota,
+  }));
+  cache.recursos = recursos.map((r) => ({
+    id: r.id, org: r.organization_id, nombre: r.nombre, tipo: r.tipo, categoria: r.categoria,
+    area: r.area, subarea: r.subarea, url: r.url || "", descripcion: r.descripcion || "",
+    color: r.color || "#155EEA", estado: r.estado, visibleCliente: r.visible_cliente,
+  })).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  cache.modulosCliente = modulosCliente.map((m) => ({
+    id: m.id, org: m.organization_id, slug: m.slug, nombre: m.nombre, descripcion: m.descripcion,
+    grupo: m.grupo, estado: m.estado, orden: m.orden,
+    accionTexto: m.accion_texto, accionUrl: m.accion_url, requiereCliente: m.requiere_cliente,
+  }));
+  cache.contenidoModulos = contenidoModulos.map((c) => ({
+    id: c.id, modulo: c.module_id, bloque: c.bloque, cuerpo: c.cuerpo, orden: c.orden,
+  }));
+  cache.finanzas = finanzas.map((f) => ({
+    id: f.id, org: f.organization_id, periodo: f.periodo, clave: f.clave,
+    valor: f.valor, moneda: f.moneda, nota: f.nota,
+  }));
   cache.eventos = armarEventos(cache);
   return cache;
 }
@@ -169,6 +234,77 @@ export const acciones = {
     const { error } = await supabase.from("profiles").update({ rol }).eq("id", id);
     if (error) throw new Error(traducirEscritura(error));
     cache.usuarios = cache.usuarios.map((x) => x.id === id ? { ...x, rol } : x);
+  },
+
+  /* --- Avance de una subárea en una cuenta ------------------------------
+     Upsert: si es la primera vez que alguien la toca, la fila se crea sola. */
+  async guardarAvance(orgId, subareaId, cambios) {
+    const actual = cache.estados.find((e) => e.org === orgId && e.subarea === subareaId);
+    const fila = {
+      organization_id: orgId,
+      subarea_id: subareaId,
+      estado: cambios.estado ?? actual?.estado ?? "pendiente",
+      hechos: cambios.hechos ?? actual?.hechos ?? [],
+      responsable_id: cambios.responsable ?? actual?.responsable ?? null,
+      nota: cambios.nota ?? actual?.nota ?? null,
+      actualizado_en: new Date().toISOString(),
+    };
+    const { data, error } = await supabase.from("subarea_estados")
+      .upsert(fila, { onConflict: "organization_id,subarea_id" }).select().single();
+    if (error) throw new Error(traducirEscritura(error));
+    const mapeado = {
+      id: data.id, org: data.organization_id, subarea: data.subarea_id, estado: data.estado,
+      responsable: data.responsable_id, hechos: data.hechos || [], nota: data.nota,
+    };
+    cache.estados = [...cache.estados.filter((e) => !(e.org === orgId && e.subarea === subareaId)), mapeado];
+    return mapeado;
+  },
+
+  /* --- Recursos: cambiar un enlace no debería requerir un programador --- */
+  async guardarRecurso(id, campos) {
+    const { error } = await supabase.from("resources")
+      .update({ ...campos, actualizado_en: new Date().toISOString() }).eq("id", id);
+    if (error) throw new Error(traducirEscritura(error));
+    cache.recursos = cache.recursos.map((r) => r.id === id ? { ...r, ...campos } : r);
+  },
+
+  async crearRecurso(d) {
+    const { data, error } = await supabase.from("resources").insert({
+      organization_id: d.org || null, nombre: d.nombre, tipo: d.tipo || "enlace",
+      categoria: d.categoria || null, area: d.area || null, subarea: d.subarea || null,
+      url: d.url || null, descripcion: d.descripcion || null, color: d.color || "#155EEA",
+      visible_cliente: !!d.visibleCliente,
+    }).select().single();
+    if (error) throw new Error(traducirEscritura(error));
+    const r = {
+      id: data.id, org: data.organization_id, nombre: data.nombre, tipo: data.tipo,
+      categoria: data.categoria, area: data.area, subarea: data.subarea, url: data.url || "",
+      descripcion: data.descripcion || "", color: data.color, estado: data.estado,
+      visibleCliente: data.visible_cliente,
+    };
+    cache.recursos = [...cache.recursos, r].sort((a, b) => a.nombre.localeCompare(b.nombre));
+    return r;
+  },
+
+  async borrarRecurso(id) {
+    const { error } = await supabase.from("resources").delete().eq("id", id);
+    if (error) throw new Error(traducirEscritura(error));
+    cache.recursos = cache.recursos.filter((r) => r.id !== id);
+  },
+
+  /* --- Candados del portal: solo el equipo los mueve ------------------- */
+  async cambiarEstadoModulo(moduleId, estado) {
+    const { error } = await supabase.from("client_modules")
+      .update({ estado, actualizado_en: new Date().toISOString() }).eq("id", moduleId);
+    if (error) throw new Error(traducirEscritura(error));
+    cache.modulosCliente = cache.modulosCliente.map((m) => m.id === moduleId ? { ...m, estado } : m);
+  },
+
+  async guardarAccionModulo(moduleId, campos) {
+    const { error } = await supabase.from("client_modules").update(campos).eq("id", moduleId);
+    if (error) throw new Error(traducirEscritura(error));
+    cache.modulosCliente = cache.modulosCliente.map((m) => m.id === moduleId
+      ? { ...m, accionTexto: campos.accion_texto ?? m.accionTexto, accionUrl: campos.accion_url ?? m.accionUrl } : m);
   },
 
   async cambiarEstadoTarea(id, estado) {
