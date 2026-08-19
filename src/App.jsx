@@ -915,7 +915,7 @@ function VistaClienteHub({ id, tabInicial, modoCliente = false }) {
     if (sec === "portal") return <HubPortal cliente={cliente} />;
     if (sec === "tareas") return tareas.length
       ? <div className="card">{tareas.map((t) => <TaskCard key={t.id} tarea={t} onToggle={(id) => cambiarEstadoTarea(id, t.estado === "completada" ? "curso" : "completada")} />)}</div>
-      : <div className="card"><Empty icon={CheckSquare} titulo="Sin tareas abiertas" texto="Cuando se asigne trabajo para este cliente, va a aparecer acá." cta="Crear tarea" /></div>;
+      : <div className="card"><Empty icon={CheckSquare} titulo="Sin tareas abiertas" texto="Cuando se asigne trabajo para este cliente, va a aparecer acá." /></div>;
     if (["kpis", "leads", "ventas", "roas", "cac", "conversion"].includes(sec)) return <HubResultados cliente={cliente} foco={sec} />;
 
     /* Lo que ya vive en la base se lee de la base; el resto queda como
@@ -938,7 +938,7 @@ function VistaClienteHub({ id, tabInicial, modoCliente = false }) {
           : x.presupuesto ? `Presupuesto USD ${Number(x.presupuesto).toLocaleString("es-AR")}` : x.formato || "—",
         e: x.estado === "activa" || x.etapa === "publicado" ? "completada" : x.etapa === "aprobacion" || x.estado === "revision" ? "revision" : x.estado === "bloqueada" ? "bloqueada" : "curso",
       }));
-      if (!filas.length) return <div className="card"><Empty titulo="Todavía no hay nada acá" texto="Cuando cargues el primer registro de esta sección, lo vas a ver en esta pantalla." cta="Agregar" /></div>;
+      if (!filas.length) return <div className="card"><Empty titulo="Todavía no hay nada acá" texto="Cuando el equipo cargue el primer registro de esta sección, lo vas a ver acá." /></div>;
       return (
         <div className="card">
           {filas.map((r, i) => (
@@ -955,7 +955,7 @@ function VistaClienteHub({ id, tabInicial, modoCliente = false }) {
     }
 
     const rows = HUB_DATA[sec];
-    if (!rows) return <div className="card"><Empty titulo="Todavía no hay nada acá" texto="Cargá el primer registro de esta sección para este cliente." cta="Agregar" /></div>;
+    if (!rows) return <div className="card"><Empty titulo="Todavía no hay nada acá" texto="Esta sección todavía no tiene su tabla propia. Por ahora se trabaja desde el área correspondiente." /></div>;
     return (
       <div className="card">
         {rows.map((r, i) => (
@@ -1165,10 +1165,12 @@ function VistaArea({ id }) {
 }
 
 function VistaSubmodulo({ areaId, subId }) {
-  const { go } = useApp();
+  const { go, perfil, clientesVisibles, crearRegistro, cambiarEstadoRegistro, version } = useApp();
   const area = AREAS.find((a) => a.id === areaId);
   const sub = area?.items.find((i) => i.id === subId);
-  const data = services.modulos.get(areaId, subId);
+  const [nuevo, setNuevo] = useState(false);
+  const clave = `${areaId}/${subId}`;
+  const registros = useMemo(() => services.registros.deSubarea(clave), [clave, version]);
   if (!area || !sub) return null;
   const t = TONE[area.tone];
 
@@ -1180,46 +1182,113 @@ function VistaSubmodulo({ areaId, subId }) {
           <h1 className="h1" style={{ fontSize: 22 }}>{sub.name}</h1>
           <p className="sub">{area.name} · {area.desc}</p>
         </div>
-        <button className="btn btn-primary" style={{ marginLeft: "auto" }}><Plus size={15} /> Agregar</button>
+        <button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={() => setNuevo(true)}>
+          <Plus size={15} /> Agregar
+        </button>
       </div>
 
-      {!data ? (
+      {registros.length === 0 ? (
         <div className="card">
-          <Empty titulo="Todavía no hay nada acá" texto={`Cuando cargues el primer registro de ${sub.name.toLowerCase()}, lo vas a ver en esta pantalla.`} cta="Cargar el primero" />
+          <Empty titulo="Todavía no hay nada acá"
+            texto={`Cargá el primer registro de ${sub.name.toLowerCase()} y va a aparecer en esta lista.`}
+            cta="Cargar el primero" onCta={() => setNuevo(true)} />
         </div>
       ) : (
         <div className="card">
           <div className="list-row" style={{ background: "var(--surface-2)", padding: "10px 16px" }}>
-            <span className="eyebrow" style={{ flex: 1 }}>{data.col}</span>
-            <span className="eyebrow" style={{ width: 110, textAlign: "right" }}>Estado</span>
+            <span className="eyebrow" style={{ flex: 1 }}>{sub.name}</span>
+            <span className="eyebrow" style={{ width: 120, textAlign: "right" }}>Estado</span>
             <span className="eyebrow" style={{ width: 120, textAlign: "right" }}>Detalle</span>
           </div>
-          {data.rows.map((r, i) => (
-            <div key={i} className="list-row">
-              <span style={{ minWidth: 0, flex: 1 }}>
-                <span style={{ display: "block", fontSize: 13.5, fontWeight: 500 }}>{r.t}</span>
-                <span className="mini" style={{ display: "block", marginTop: 2 }}>{r.meta}</span>
-              </span>
-              <span style={{ width: 110, textAlign: "right", flexShrink: 0 }}>
-                <StatusBadge tone={ESTADOS[r.estado].tone} dot>{ESTADOS[r.estado].label}</StatusBadge>
-              </span>
-              <span style={{ width: 120, textAlign: "right", flexShrink: 0, fontSize: 13, fontWeight: 600 }}>{r.extra}</span>
-            </div>
-          ))}
+          {registros.map((r) => {
+            const cli = r.org ? services.clientes.get(r.org) : null;
+            return (
+              <div key={r.id} className="list-row">
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 500 }}>{r.titulo}</span>
+                  <span className="mini" style={{ display: "block", marginTop: 2 }}>
+                    {cli ? cli.nombre : "Interno"}{r.detalle ? ` · ${r.detalle}` : ""}
+                  </span>
+                </span>
+                <span style={{ width: 120, textAlign: "right", flexShrink: 0 }}>
+                  <select value={r.estado} onChange={(e) => cambiarEstadoRegistro(r.id, e.target.value)}
+                    style={{ ...inputStyle, padding: "5px 7px", fontSize: 12 }}>
+                    {Object.entries(ESTADOS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                </span>
+                <span style={{ width: 120, textAlign: "right", flexShrink: 0, fontSize: 13, fontWeight: 600 }}>{r.extra || "—"}</span>
+              </div>
+            );
+          })}
         </div>
       )}
 
       <div style={{ marginTop: 20 }}>
         <SectionHead title="Relacionado" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {area.items.filter((i) => i.id !== subId).slice(0, 5).map((i) => (
-            <button key={i.id} className="pill" onClick={() => go(i.view ? { view: i.view } : { view: "sub", areaId, subId: i.id })}>
+          {itemsDeArea(area).filter((i) => i.id !== subId).slice(0, 5).map((i) => (
+            <button key={i.id} className="pill"
+              onClick={() => go(i.slug ? { view: "subarea", slug: i.slug } : i.view ? { view: i.view } : { view: "sub", areaId, subId: i.id })}>
               <i.icon size={14} />{i.name}
             </button>
           ))}
         </div>
       </div>
+
+      {nuevo && (
+        <NuevoRegistroModal titulo={sub.name} clientes={clientesVisibles}
+          onClose={() => setNuevo(false)}
+          onCrear={async (d) => { await crearRegistro({ ...d, area: areaId, subarea: clave }); setNuevo(false); }} />
+      )}
     </>
+  );
+}
+
+function NuevoRegistroModal({ titulo, clientes, onClose, onCrear }) {
+  const [f, setF] = useState({ titulo: "", detalle: "", extra: "", org: "", estado: "pendiente" });
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const listo = f.titulo.trim().length > 1;
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 520 }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="h2">Agregar en {titulo}</div>
+          <button className="icon-btn" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Cerrar"><X size={17} /></button>
+        </div>
+        <div style={{ padding: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <Campo label="Qué anotás" ancho>
+            <input style={inputStyle} value={f.titulo} onChange={(e) => set("titulo", e.target.value)} autoFocus
+              placeholder="Escribilo en una línea" />
+          </Campo>
+          <Campo label="Cliente">
+            <select style={inputStyle} value={f.org} onChange={(e) => set("org", e.target.value)}>
+              <option value="">Interno (sin cliente)</option>
+              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Estado">
+            <select style={inputStyle} value={f.estado} onChange={(e) => set("estado", e.target.value)}>
+              {Object.entries(ESTADOS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Nota" ancho>
+            <input style={inputStyle} value={f.detalle} onChange={(e) => set("detalle", e.target.value)}
+              placeholder="Opcional" />
+          </Campo>
+          <Campo label="Dato suelto" ancho>
+            <input style={inputStyle} value={f.extra} onChange={(e) => set("extra", e.target.value)}
+              placeholder="Opcional: un número, una fecha, un monto" />
+          </Campo>
+        </div>
+        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary btn-sm" disabled={!listo}
+            style={!listo ? { opacity: .5, cursor: "not-allowed" } : undefined}
+            onClick={() => listo && onCrear(f)}>Agregar</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1340,7 +1409,8 @@ function VistaProceso({ id }) {
 
 /* --- Tareas ------------------------------------------------------------- */
 function VistaTareas() {
-  const { cambiarEstadoTarea, version } = useApp();
+  const { cambiarEstadoTarea, crearTarea, clientesVisibles, usuarios, version } = useApp();
+  const [nueva, setNueva] = useState(false);
   const tareas = useMemo(() => services.tareas.list(), [version]);
   const [estado, setEstado] = useState("abiertas");
   const [q, setQ] = useState("");
@@ -1363,7 +1433,9 @@ function VistaTareas() {
           <h1 className="h1">Tareas</h1>
           <p className="sub">Lo que hay que hacer, sin vueltas.</p>
         </div>
-        <button className="btn btn-primary" style={{ marginLeft: "auto" }}><Plus size={15} /> Nueva tarea</button>
+        <button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={() => setNueva(true)}>
+          <Plus size={15} /> Nueva tarea
+        </button>
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
@@ -1380,10 +1452,79 @@ function VistaTareas() {
 
       <div className="card">
         {lista.length === 0
-          ? <Empty icon={CheckCircle2} titulo="Todo en orden" texto="No hay tareas que coincidan con este filtro." />
+          ? <Empty icon={CheckCircle2} titulo="Todo en orden" texto="No hay tareas que coincidan con este filtro."
+              cta="Nueva tarea" onCta={() => setNueva(true)} />
           : lista.map((t) => <TaskCard key={t.id} tarea={t} onToggle={toggle} />)}
       </div>
+
+      {nueva && (
+        <NuevaTareaModal clientes={clientesVisibles} usuarios={usuarios}
+          onClose={() => setNueva(false)}
+          onCrear={async (d) => { await crearTarea(d); setNueva(false); }} />
+      )}
     </>
+  );
+}
+
+function NuevaTareaModal({ clientes, usuarios, onClose, onCrear }) {
+  const [f, setF] = useState({ titulo: "", org: "", area: "Contenido", prioridad: "media", responsable: "", fecha: "", visibleCliente: false });
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const listo = f.titulo.trim().length > 1;
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 540 }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="h2">Nueva tarea</div>
+          <button className="icon-btn" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Cerrar"><X size={17} /></button>
+        </div>
+        <div style={{ padding: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <Campo label="Qué hay que hacer" ancho>
+            <input style={inputStyle} value={f.titulo} onChange={(e) => set("titulo", e.target.value)} autoFocus
+              placeholder="Editar los 6 reels de la sesión" />
+          </Campo>
+          <Campo label="Cliente">
+            <select style={inputStyle} value={f.org} onChange={(e) => set("org", e.target.value)}>
+              <option value="">Interno</option>
+              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Área">
+            <select style={inputStyle} value={f.area} onChange={(e) => set("area", e.target.value)}>
+              {AREAS.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Responsable">
+            <select style={inputStyle} value={f.responsable} onChange={(e) => set("responsable", e.target.value)}>
+              <option value="">Sin asignar</option>
+              {usuarios.filter((u) => ROLES[u.rol]?.tipo === "interno" && u.estado === "activo")
+                .map((u) => <option key={u.id} value={u.id}>{u.nombre} {u.apellido}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Prioridad">
+            <select style={inputStyle} value={f.prioridad} onChange={(e) => set("prioridad", e.target.value)}>
+              {Object.entries(PRIORIDADES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Para cuándo" ancho>
+            <input style={inputStyle} type="date" value={f.fecha} onChange={(e) => set("fecha", e.target.value)} />
+          </Campo>
+          {f.org && (
+            <Campo label="¿La ve el cliente?" ancho>
+              <button className={`pill ${f.visibleCliente ? "on" : ""}`} onClick={() => set("visibleCliente", !f.visibleCliente)}>
+                {f.visibleCliente ? "Sí, aparece en su portal" : "No, solo el equipo"}
+              </button>
+            </Campo>
+          )}
+        </div>
+        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary btn-sm" disabled={!listo}
+            style={!listo ? { opacity: .5, cursor: "not-allowed" } : undefined}
+            onClick={() => listo && onCrear(f)}>Crear tarea</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2545,9 +2686,16 @@ function NuevoRecursoModal({ clientes, ambito, onClose, onCrear }) {
 
 /* --- Qué ve el cliente: el equipo abre y cierra cada módulo ------------- */
 function HubPortal({ cliente }) {
-  const { cambiarEstadoModulo, version, mostrar } = useApp();
+  const { cambiarEstadoModulo, guardarAccionModulo, version, mostrar } = useApp();
   const modulos = useMemo(() => services.modulosCliente.byOrg(cliente.id), [cliente.id, version]);
   const abiertos = modulos.filter((m) => m.estado === "disponible").length;
+  const [editando, setEditando] = useState(null);
+  const [borrador, setBorrador] = useState("");
+
+  const guardarEnlace = async (m) => {
+    await guardarAccionModulo(m.id, { accion_url: borrador.trim() || null });
+    setEditando(null);
+  };
 
   if (!modulos.length) return (
     <div className="card"><Empty icon={Lock} titulo="Este cliente todavía no tiene portal"
@@ -2571,7 +2719,30 @@ function HubPortal({ cliente }) {
               <span style={{ display: "block", fontSize: 13.4, fontWeight: 600 }}>{m.nombre}</span>
               <span className="mini" style={{ display: "block", marginTop: 2 }}>{m.grupo}</span>
             </span>
-            <span className="mini" style={{ flex: 1, minWidth: 120 }}>{m.descripcion}</span>
+            <span style={{ flex: 1, minWidth: 140 }}>
+              {m.accionTexto ? (
+                editando === m.id ? (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <input style={inputStyle} value={borrador} autoFocus
+                      placeholder={`Enlace para "${m.accionTexto}"`}
+                      onChange={(e) => setBorrador(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && guardarEnlace(m)} />
+                    <button className="btn btn-primary btn-sm" onClick={() => guardarEnlace(m)}>Guardar</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setEditando(null)}>Cancelar</button>
+                  </div>
+                ) : (
+                  <button className="row-link" style={{ padding: "6px 9px" }}
+                    onClick={() => { setEditando(m.id); setBorrador(m.accionUrl || ""); }}>
+                    <ExternalLink size={13} style={{ color: "var(--muted)", flexShrink: 0 }} />
+                    {m.accionUrl
+                      ? <span className="mini" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.accionUrl}</span>
+                      : <span className="mini" style={{ fontStyle: "italic" }}>Botón "{m.accionTexto}" sin enlace — clic para cargarlo</span>}
+                  </button>
+                )
+              ) : (
+                <span className="mini">{m.descripcion}</span>
+              )}
+            </span>
             <span style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
               {Object.entries(ESTADOS_MODULO).map(([k, v]) => (
                 <button key={k} className={`pill ${m.estado === k ? "on" : ""}`}
@@ -2584,7 +2755,9 @@ function HubPortal({ cliente }) {
       </div>
 
       <p className="mini" style={{ marginTop: 12, lineHeight: 1.55, maxWidth: 620 }}>
-        El cliente nunca puede abrir un módulo por su cuenta. El recorrido avanza cuando el equipo lo decide.
+        El cliente nunca puede abrir un módulo por su cuenta: el recorrido avanza cuando el equipo lo decide.
+        Los módulos con botón —Onboarding, Reunión estratégica, Material— necesitan su enlace: ahí pegás el Typeform,
+        el Calendly o la carpeta de Drive de {cliente.nombre}.
       </p>
     </>
   );
@@ -3068,6 +3241,26 @@ export default function MarketingEnFlujoOS() {
     catch (e) { mostrar(e.message); }
   };
 
+  const crearRegistro = async (d) => {
+    try { await acciones.crearRegistro(d, perfil.id); setVersion((v) => v + 1); }
+    catch (e) { mostrar(e.message); }
+  };
+
+  const cambiarEstadoRegistro = async (id, estado) => {
+    try { await acciones.cambiarEstadoRegistro(id, estado); setVersion((v) => v + 1); }
+    catch (e) { mostrar(e.message); }
+  };
+
+  const crearTarea = async (d) => {
+    try { await acciones.crearTarea(d); setVersion((v) => v + 1); mostrar("Tarea creada."); }
+    catch (e) { mostrar(e.message); }
+  };
+
+  const guardarAccionModulo = async (moduleId, campos) => {
+    try { await acciones.guardarAccionModulo(moduleId, campos); setVersion((v) => v + 1); mostrar("Enlace guardado. El cliente ya lo ve."); }
+    catch (e) { mostrar(e.message); }
+  };
+
   const cambiarEstadoModulo = async (moduleId, estado) => {
     try { await acciones.cambiarEstadoModulo(moduleId, estado); setVersion((v) => v + 1); }
     catch (e) { mostrar(e.message); }
@@ -3090,6 +3283,7 @@ export default function MarketingEnFlujoOS() {
     usuarios, invitaciones, invitar, cambiarEstadoUsuario, cambiarRolUsuario, cambiarEstadoTarea,
     clientesVisibles, getCliente, accesoA, crearCliente, version,
     recursos, guardarAvance, guardarRecurso, crearRecurso, borrarRecurso, cambiarEstadoModulo,
+    crearRegistro, cambiarEstadoRegistro, crearTarea, guardarAccionModulo,
   };
 
   const esCliente = perfil ? ROLES[rolActivo].tipo === "cliente" : false;
