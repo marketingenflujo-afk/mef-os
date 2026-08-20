@@ -6,7 +6,7 @@ import {
   Clock, AlertCircle, CheckCircle2, Circle, FileText, Zap, Sparkles, LayoutDashboard,
   PieChart, Wallet, GitBranch, Lightbulb, Mic, Scissors, ThumbsUp, Send, Image as ImageIcon,
   Wrench, Library, Route, ListChecks, MessageSquare, Paperclip, Video, Eye, Gauge, Flag,
-  Building2, Star, Command, CornerDownLeft, Filter, Layers, Compass, Beaker, Activity, Lock,
+  Building2, Star, Command, CornerDownLeft, Filter, Layers, Compass, Beaker, Activity, Lock, Unlock,
   ClipboardList, Rocket, Share2, ShieldCheck, Award, Play, Download
 } from "lucide-react";
 
@@ -686,6 +686,26 @@ function VistaCEO() {
         ))}
       </div>
 
+      <SectionHead title="Recursos" action={
+        <button className="btn btn-ghost btn-sm" onClick={() => go({ view: "recursos" })}>Administrar recursos</button>} />
+      <div className="grid g4" style={{ marginBottom: 22 }}>
+        {(() => {
+          const rs = services.recursos.list();
+          return [
+            ["Total", rs.length, "muted"],
+            ["De clientes", rs.filter((r) => r.org).length, "muted"],
+            ["Los ve el cliente", rs.filter((r) => r.visibleCliente).length, "green"],
+            ["Sin enlace", rs.filter((r) => !r.url).length, rs.filter((r) => !r.url).length ? "orange" : "green"],
+          ].map(([l, v, t]) => (
+            <div key={l} className="card card-pad">
+              <div className="eyebrow">{l}</div>
+              <div className="stat-num">{v}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: t === "muted" ? "var(--muted)" : `var(--${t})` }}>recursos</div>
+            </div>
+          ));
+        })()}
+      </div>
+
       <SectionHead title="Salud de la cartera" action={<button className="btn btn-ghost btn-sm" onClick={() => go({ view: "clientes" })}>Ver clientes</button>} />
       <div className="card">
         {clientesVisibles.map((c) => (
@@ -1165,7 +1185,7 @@ function VistaArea({ id }) {
 }
 
 function VistaSubmodulo({ areaId, subId }) {
-  const { go, perfil, clientesVisibles, crearRegistro, cambiarEstadoRegistro, version } = useApp();
+  const { go, perfil, clientesVisibles, crearRegistro, cambiarEstadoRegistro, crearRecurso, version } = useApp();
   const area = AREAS.find((a) => a.id === areaId);
   const sub = area?.items.find((i) => i.id === subId);
   const [nuevo, setNuevo] = useState(false);
@@ -1217,6 +1237,16 @@ function VistaSubmodulo({ areaId, subId }) {
                   </select>
                 </span>
                 <span style={{ width: 120, textAlign: "right", flexShrink: 0, fontSize: 13, fontWeight: 600 }}>{r.extra || "—"}</span>
+                {r.recurso && (() => {
+                  const rec = services.recursos.list().find((x) => x.id === r.recurso);
+                  if (!rec) return null;
+                  return (
+                    <button className="icon-btn" style={{ width: 30, height: 30 }} title={rec.nombre}
+                      onClick={() => rec.url ? window.open(rec.url, "_blank", "noopener,noreferrer") : null}>
+                      <FileText size={14} />
+                    </button>
+                  );
+                })()}
               </div>
             );
           })}
@@ -1236,16 +1266,17 @@ function VistaSubmodulo({ areaId, subId }) {
       </div>
 
       {nuevo && (
-        <NuevoRegistroModal titulo={sub.name} clientes={clientesVisibles}
+        <NuevoRegistroModal titulo={sub.name} clientes={clientesVisibles} area={areaId} subarea={clave}
           onClose={() => setNuevo(false)}
+          onCrearRecurso={crearRecurso}
           onCrear={async (d) => { await crearRegistro({ ...d, area: areaId, subarea: clave }); setNuevo(false); }} />
       )}
     </>
   );
 }
 
-function NuevoRegistroModal({ titulo, clientes, onClose, onCrear }) {
-  const [f, setF] = useState({ titulo: "", detalle: "", extra: "", org: "", estado: "pendiente" });
+function NuevoRegistroModal({ titulo, clientes, area, subarea, onClose, onCrear, onCrearRecurso }) {
+  const [f, setF] = useState({ titulo: "", detalle: "", extra: "", org: "", estado: "pendiente", recurso: null });
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const listo = f.titulo.trim().length > 1;
 
@@ -1280,6 +1311,11 @@ function NuevoRegistroModal({ titulo, clientes, onClose, onCrear }) {
             <input style={inputStyle} value={f.extra} onChange={(e) => set("extra", e.target.value)}
               placeholder="Opcional: un número, una fecha, un monto" />
           </Campo>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>Recurso relacionado</div>
+            <SelectorRecurso valor={f.recurso} onChange={(id) => set("recurso", id)}
+              org={f.org} area={area} subarea={subarea} clientes={clientes} onCrear={onCrearRecurso} />
+          </div>
         </div>
         <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
@@ -2028,6 +2064,11 @@ function VistaPortalCliente() {
 function ModuloClienteModal({ moduloId, onClose, onAviso }) {
   const m = services.modulosCliente.get(moduloId);
   const bloques = services.contenidoModulo.byModulo(moduloId);
+  /* Solo llegan los recursos de su cuenta con el candado abierto:
+     los cerrados ni siquiera viajan desde la base. */
+  const recursos = m ? services.recursos.deModuloCliente(m.org, m.slug) : [];
+  const esAccesos = m?.slug === "accesos";
+  const accesos = esAccesos ? services.accesos.byOrg(m.org) : [];
   if (!m) return null;
   const e = ESTADOS_MODULO[m.estado] || ESTADOS_MODULO.bloqueado;
 
@@ -2054,7 +2095,52 @@ function ModuloClienteModal({ moduloId, onClose, onAviso }) {
             </button>
           )}
 
-          {bloques.length === 0 ? (
+          {esAccesos && (
+            <div style={{ marginBottom: 18 }}>
+              {accesos.map((a) => {
+                const e = ESTADOS_ACCESO[a.estado] || ESTADOS_ACCESO.pendiente;
+                return (
+                  <div key={a.id} className="card card-pad" style={{ marginBottom: 9, boxShadow: "none" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 6 }}>
+                      <span className="h3">{a.plataforma}</span>
+                      <span style={{ marginLeft: "auto" }}><StatusBadge tone={e.tone} dot>{e.label}</StatusBadge></span>
+                    </div>
+                    <div className="mini" style={{ lineHeight: 1.6 }}>
+                      <strong style={{ color: "var(--text)" }}>Qué necesitamos:</strong> {a.necesitamos}<br />
+                      <strong style={{ color: "var(--text)" }}>Para qué:</strong> {a.porQue}<br />
+                      <strong style={{ color: "var(--text)" }}>Cómo se otorga:</strong> {a.instrucciones}
+                    </div>
+                  </div>
+                );
+              })}
+              <p className="mini" style={{ marginTop: 10, lineHeight: 1.55 }}>
+                Nunca te vamos a pedir una contraseña. Todos los accesos se dan por invitación, y los podés quitar cuando quieras.
+              </p>
+            </div>
+          )}
+
+          {recursos.length > 0 && (
+            <div style={{ marginBottom: bloques.length ? 20 : 0 }}>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>Documentos</div>
+              {recursos.map((r) => (
+                <button key={r.id} className="row-link" style={{ padding: "10px 11px" }}
+                  onClick={() => r.url ? window.open(r.url, "_blank", "noopener,noreferrer")
+                    : onAviso("Estamos terminando de preparar este documento.")}>
+                  <span style={{ width: 28, height: 28, borderRadius: 7, background: r.color, color: "#fff",
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <FileText size={13} />
+                  </span>
+                  <span style={{ minWidth: 0, textAlign: "left" }}>
+                    <span style={{ display: "block", fontSize: 13.2, fontWeight: 600 }}>{r.nombre}</span>
+                    <span className="mini" style={{ display: "block" }}>{r.tipo}{r.descripcion ? ` · ${r.descripcion}` : ""}</span>
+                  </span>
+                  <ExternalLink size={14} className="rc" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {bloques.length === 0 && recursos.length === 0 && !esAccesos ? (
             <Empty icon={Clock} titulo="Estamos preparando esta parte"
               texto="Cuando esté lista la vas a ver acá, y te avisamos." />
           ) : bloques.map((b) => (
@@ -2499,148 +2585,201 @@ function VistaSubarea({ slug }) {
 }
 
 
-/* --- Recursos: los enlaces del sistema, editables sin tocar código ------ */
+/* --- Centro de recursos -------------------------------------------------
+   Un recurso se crea una vez acá y después se selecciona donde haga falta.
+   Estado y visibilidad son cosas distintas: el trabajo puede estar terminado
+   y el candado seguir cerrado para el cliente.                            */
+const TIPOS_RECURSO = [
+  "Google Drive", "Google Sheet", "Google Docs", "PDF", "Excel", "Canva", "Miro",
+  "CapCut", "HeyGen", "Higgsfield", "Flow", "Metricool", "Meta Ads Manager",
+  "Meta Business Manager", "Apollo", "Calendly", "Typeform", "Make", "Slack",
+  "WhatsApp", "LinkedIn", "Otro",
+];
+
 function VistaRecursos() {
-  const { go, perfil, clientesVisibles, recursos, guardarRecurso, crearRecurso, borrarRecurso, mostrar } = useApp();
-  const [ambito, setAmbito] = useState("global");
-  const [editando, setEditando] = useState(null);
-  const [borrador, setBorrador] = useState("");
-  const [nuevo, setNuevo] = useState(false);
+  const { go, perfil, clientesVisibles, recursos, guardarRecurso, crearRecurso,
+          duplicarRecurso, borrarRecurso, mostrar } = useApp();
+  const [q, setQ] = useState("");
+  const [fCliente, setFCliente] = useState("todos");
+  const [fArea, setFArea] = useState("todas");
+  const [fVis, setFVis] = useState("todas");
+  const [editar, setEditar] = useState(null);   // recurso o "nuevo"
 
-  const lista = ambito === "global"
-    ? recursos.filter((r) => !r.org)
-    : recursos.filter((r) => r.org === ambito);
-  const sinEnlace = lista.filter((r) => !r.url).length;
+  const lista = recursos
+    .filter((r) => fCliente === "todos" || (fCliente === "global" ? !r.org : r.org === fCliente))
+    .filter((r) => fArea === "todas" || r.area === fArea)
+    .filter((r) => fVis === "todas" || (fVis === "cliente" ? r.visibleCliente : !r.visibleCliente))
+    .filter((r) => (r.nombre + r.descripcion + (r.tipo || "") + (r.subarea || "")).toLowerCase().includes(q.toLowerCase()));
 
-  const guardar = async (r) => {
-    try { await guardarRecurso(r.id, { url: borrador.trim() || null }); setEditando(null); mostrar(`Enlace de ${r.nombre} guardado.`); }
-    catch (e) { mostrar(e.message); }
-  };
+  const total = recursos.length;
+  const deClientes = recursos.filter((r) => r.org).length;
+  const abiertos = recursos.filter((r) => r.visibleCliente).length;
+  const sinEnlace = recursos.filter((r) => !r.url).length;
 
   return (
     <>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
         <div>
           <h1 className="h1">Recursos</h1>
-          <p className="sub">Cada enlace del sistema vive acá. Cambiás uno y cambia en todas las pantallas.</p>
+          <p className="sub">Cada documento, carpeta y herramienta del sistema. Se carga una vez y se usa en todos lados.</p>
         </div>
-        <button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={() => setNuevo(true)}>
+        <button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={() => setEditar("nuevo")}>
           <Plus size={15} /> Nuevo recurso
         </button>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <button className={`pill ${ambito === "global" ? "on" : ""}`} onClick={() => setAmbito("global")}>
-          Herramientas de la agencia
-        </button>
-        {clientesVisibles.map((c) => (
-          <button key={c.id} className={`pill ${ambito === c.id ? "on" : ""}`} onClick={() => setAmbito(c.id)}>{c.nombre}</button>
-        ))}
-      </div>
-
-      {sinEnlace > 0 && (
-        <div className="card card-pad" style={{ marginBottom: 16, display: "flex", gap: 11, alignItems: "center",
-          borderColor: "var(--orange)", background: "var(--orange-soft)" }}>
-          <AlertCircle size={17} style={{ color: "var(--orange)", flexShrink: 0 }} />
-          <span style={{ fontSize: 13.2, flex: 1 }}>
-            {sinEnlace} {sinEnlace === 1 ? "recurso todavía no tiene enlace" : "recursos todavía no tienen enlace"}. Hasta que lo cargues, el botón de abrir no lleva a ningún lado.
-          </span>
-        </div>
-      )}
-
-      <div className="card">
-        {lista.length === 0 ? (
-          <Empty icon={Link2} titulo="Todavía no hay recursos acá"
-            texto="Sumá la carpeta de Drive, la planilla de presupuesto o el formulario de onboarding de esta cuenta."
-            cta="Nuevo recurso" onCta={() => setNuevo(true)} />
-        ) : lista.map((r) => (
-          <div key={r.id} className="list-row" style={{ alignItems: "flex-start" }}>
-            <span style={{ width: 30, height: 30, borderRadius: 8, background: r.color, color: "#fff", display: "flex",
-              alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, flexShrink: 0, marginTop: 2 }}>
-              {r.nombre.slice(0, 1)}
-            </span>
-            <span style={{ width: 170, flexShrink: 0, minWidth: 0 }}>
-              <span style={{ display: "block", fontSize: 13.3, fontWeight: 600 }}>{r.nombre}</span>
-              <span className="mini" style={{ display: "block" }}>{r.descripcion || r.tipo}</span>
-            </span>
-            <span style={{ flex: 1, minWidth: 140 }}>
-              {editando === r.id ? (
-                <div style={{ display: "flex", gap: 7 }}>
-                  <input style={inputStyle} value={borrador} autoFocus placeholder="Pegá el enlace exacto"
-                    onChange={(e) => setBorrador(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && guardar(r)} />
-                  <button className="btn btn-primary btn-sm" onClick={() => guardar(r)}>Guardar</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setEditando(null)}>Cancelar</button>
-                </div>
-              ) : (
-                <button className="row-link" style={{ padding: "6px 9px" }}
-                  onClick={() => { setEditando(r.id); setBorrador(r.url); }}>
-                  {r.url
-                    ? <span className="mini" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.url}</span>
-                    : <span className="mini" style={{ fontStyle: "italic" }}>Sin enlace — clic para cargarlo</span>}
-                </button>
-              )}
-            </span>
-            {r.url && <StatusBadge tone="green" dot>Listo</StatusBadge>}
-            {r.org && (
-              <button className={`pill ${r.visibleCliente ? "on" : ""}`}
-                onClick={() => guardarRecurso(r.id, { visible_cliente: !r.visibleCliente }).catch((e) => mostrar(e.message))}>
-                {r.visibleCliente ? "Lo ve el cliente" : "Solo interno"}
-              </button>
-            )}
-            {puede(perfil.rol, "*") && (
-              <button className="icon-btn" style={{ width: 30, height: 30 }} title="Borrar"
-                onClick={() => borrarRecurso(r.id)}><X size={14} /></button>
-            )}
+      <div className="grid g4" style={{ marginBottom: 18 }}>
+        {[["Total", total, "muted"], ["De clientes", deClientes, "muted"],
+          ["Los ve el cliente", abiertos, "green"], ["Sin enlace cargado", sinEnlace, sinEnlace ? "orange" : "green"]].map(([l, v, t]) => (
+          <div key={l} className="card card-pad">
+            <div className="eyebrow">{l}</div>
+            <div className="stat-num">{v}</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: t === "muted" ? "var(--muted)" : `var(--${t})` }}>
+              {l === "Sin enlace cargado" ? (sinEnlace ? "Falta pegarlos" : "Todo cargado") : "recursos"}
+            </div>
           </div>
         ))}
       </div>
 
-      {nuevo && (
-        <NuevoRecursoModal
+      <div className="card card-pad" style={{ marginBottom: 14, display: "flex", gap: 11, alignItems: "center" }}>
+        <Search size={17} style={{ color: "var(--muted)" }} />
+        <input className="search-input" value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder="Buscar por nombre, tipo, etapa o descripción…" />
+        {q && <button className="icon-btn" style={{ width: 30, height: 30 }} onClick={() => setQ("")}><X size={15} /></button>}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <select style={{ ...inputStyle, width: "auto" }} value={fCliente} onChange={(e) => setFCliente(e.target.value)}>
+          <option value="todos">Todos los clientes</option>
+          <option value="global">De la agencia</option>
+          {clientesVisibles.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+        </select>
+        <select style={{ ...inputStyle, width: "auto" }} value={fArea} onChange={(e) => setFArea(e.target.value)}>
+          <option value="todas">Todas las áreas</option>
+          {AREAS.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <button className={`pill ${fVis === "todas" ? "on" : ""}`} onClick={() => setFVis("todas")}>Toda visibilidad</button>
+        <button className={`pill ${fVis === "cliente" ? "on" : ""}`} onClick={() => setFVis("cliente")}>
+          <Unlock size={13} /> Lo ve el cliente
+        </button>
+        <button className={`pill ${fVis === "interno" ? "on" : ""}`} onClick={() => setFVis("interno")}>
+          <Lock size={13} /> Solo interno
+        </button>
+        <span className="mini" style={{ marginLeft: "auto" }}>{lista.length} de {total}</span>
+      </div>
+
+      <div className="card">
+        {lista.length === 0 ? (
+          <Empty icon={Layers} titulo="No hay recursos con ese filtro"
+            texto="Probá con otro cliente o limpiá la búsqueda. Si todavía no cargaste ninguno, empezá por la carpeta de Drive de un cliente."
+            cta="Nuevo recurso" onCta={() => setEditar("nuevo")} />
+        ) : lista.map((r) => {
+          const cli = r.org ? services.clientes.get(r.org) : null;
+          const area = AREAS.find((a) => a.id === r.area);
+          const sub = r.subarea ? services.subareas.get(r.subarea) : null;
+          return (
+            <div key={r.id} className="list-row" style={{ alignItems: "center", opacity: r.estado === "activo" ? 1 : .55 }}>
+              <span style={{ width: 32, height: 32, borderRadius: 8, background: r.color, color: "#fff", display: "flex",
+                alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <FileText size={15} />
+              </span>
+              <span style={{ minWidth: 0, flex: 1 }}>
+                <span style={{ display: "block", fontSize: 13.4, fontWeight: 600 }}>{r.nombre}</span>
+                <span className="mini" style={{ display: "block", marginTop: 2 }}>
+                  {r.tipo}{cli ? ` · ${cli.nombre}` : " · De la agencia"}
+                  {area ? ` · ${area.name}` : ""}{sub ? ` → ${sub.nombre}` : ""}
+                </span>
+              </span>
+              <span style={{ width: 120, flexShrink: 0 }}>
+                {r.url
+                  ? <StatusBadge tone="green" dot>Con enlace</StatusBadge>
+                  : <StatusBadge tone="orange" dot>Sin enlace</StatusBadge>}
+              </span>
+              <button className={`pill ${r.visibleCliente ? "on" : ""}`} style={{ flexShrink: 0 }}
+                onClick={() => guardarRecurso(r.id, { visible_cliente: !r.visibleCliente })
+                  .then(() => mostrar(r.visibleCliente ? "Cerrado. El cliente dejó de verlo." : "Abierto. El cliente ya puede verlo."))
+                  .catch((e) => mostrar(e.message))}>
+                {r.visibleCliente ? <><Unlock size={13} /> Cliente</> : <><Lock size={13} /> Interno</>}
+              </button>
+              <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                {r.url && (
+                  <button className="icon-btn" style={{ width: 30, height: 30 }} title="Abrir"
+                    onClick={() => window.open(r.url, "_blank", "noopener,noreferrer")}><ExternalLink size={14} /></button>
+                )}
+                <button className="icon-btn" style={{ width: 30, height: 30 }} title="Editar"
+                  onClick={() => setEditar(r)}><Settings size={14} /></button>
+                <button className="icon-btn" style={{ width: 30, height: 30 }} title="Duplicar"
+                  onClick={() => duplicarRecurso(r.id)}><Copy size={14} /></button>
+                {puede(perfil.rol, "*") && (
+                  <button className="icon-btn" style={{ width: 30, height: 30 }} title="Borrar"
+                    onClick={() => borrarRecurso(r.id)}><X size={14} /></button>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {editar && (
+        <RecursoModal
+          recurso={editar === "nuevo" ? null : editar}
           clientes={clientesVisibles}
-          ambito={ambito}
-          onClose={() => setNuevo(false)}
-          onCrear={async (d) => { try { await crearRecurso(d); setNuevo(false); } catch (e) { mostrar(e.message); } }}
-        />
+          onClose={() => setEditar(null)}
+          onGuardar={async (d) => {
+            try {
+              if (editar === "nuevo") await crearRecurso(d);
+              else await guardarRecurso(editar.id, {
+                nombre: d.nombre, tipo: d.tipo, url: d.url || null, descripcion: d.descripcion || null,
+                organization_id: d.org || null, area: d.area || null, subarea: d.subarea || null,
+                proyecto: d.proyecto || null, estado: d.estado, visible_cliente: !!d.visibleCliente,
+                modulo_cliente: d.moduloCliente || null,
+              });
+              setEditar(null);
+            } catch (e) { mostrar(e.message); }
+          }} />
       )}
     </>
   );
 }
 
-function NuevoRecursoModal({ clientes, ambito, onClose, onCrear }) {
+/* Un solo formulario para crear y para editar: mismos campos, misma cabeza. */
+function RecursoModal({ recurso, clientes, onClose, onGuardar, compacto = false }) {
   const [f, setF] = useState({
-    nombre: "", tipo: "documento", url: "", descripcion: "",
-    org: ambito === "global" ? "" : ambito, area: "", subarea: "", visibleCliente: false,
+    nombre: recurso?.nombre || "", tipo: recurso?.tipo || "Google Drive", url: recurso?.url || "",
+    descripcion: recurso?.descripcion || "", org: recurso?.org || "", area: recurso?.area || "",
+    subarea: recurso?.subarea || "", proyecto: recurso?.proyecto || "",
+    estado: recurso?.estado || "activo", visibleCliente: recurso?.visibleCliente || false,
+    moduloCliente: recurso?.moduloCliente || "",
   });
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const subareas = f.area ? services.subareas.byArea(f.area) : [];
+  const modulos = f.org ? services.modulosCliente.byOrg(f.org) : [];
   const listo = f.nombre.trim().length > 1;
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 560 }}>
+      <div className="modal" style={{ maxWidth: 600 }}>
         <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
           <div>
-            <div className="h2">Nuevo recurso</div>
-            <div className="mini" style={{ marginTop: 2 }}>Un documento, una carpeta o una herramienta que el equipo necesita abrir.</div>
+            <div className="h2">{recurso ? "Editar recurso" : "Nuevo recurso"}</div>
+            <div className="mini" style={{ marginTop: 2 }}>Se carga una vez. Después se elige desde cualquier etapa.</div>
           </div>
           <button className="icon-btn" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Cerrar"><X size={17} /></button>
         </div>
 
-        <div style={{ padding: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, maxHeight: "56vh", overflowY: "auto" }}>
+        <div style={{ padding: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, maxHeight: "58vh", overflowY: "auto" }}>
           <Campo label="Nombre" ancho>
-            <input style={inputStyle} value={f.nombre} onChange={(e) => set("nombre", e.target.value)}
-              placeholder="Presupuesto campañas agosto" autoFocus />
+            <input style={inputStyle} value={f.nombre} onChange={(e) => set("nombre", e.target.value)} autoFocus
+              placeholder="Dashboard de métricas — Nórdika" />
           </Campo>
           <Campo label="Tipo">
             <select style={inputStyle} value={f.tipo} onChange={(e) => set("tipo", e.target.value)}>
-              {["documento", "sheet", "doc", "pdf", "carpeta", "formulario", "herramienta", "enlace"].map((t) => <option key={t}>{t}</option>)}
+              {TIPOS_RECURSO.map((t) => <option key={t}>{t}</option>)}
             </select>
           </Campo>
-          <Campo label="De quién es">
-            <select style={inputStyle} value={f.org} onChange={(e) => set("org", e.target.value)}>
-              <option value="">De la agencia</option>
+          <Campo label="Cliente">
+            <select style={inputStyle} value={f.org} onChange={(e) => { set("org", e.target.value); set("moduloCliente", ""); }}>
+              <option value="">De la agencia (para todos)</option>
               {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </Campo>
@@ -2660,23 +2799,53 @@ function NuevoRecursoModal({ clientes, ambito, onClose, onCrear }) {
               {subareas.map((x) => <option key={x.slug} value={x.slug}>{x.nombre}</option>)}
             </select>
           </Campo>
+          <Campo label="Proyecto">
+            <input style={inputStyle} value={f.proyecto} onChange={(e) => set("proyecto", e.target.value)} placeholder="Opcional" />
+          </Campo>
+          <Campo label="Estado">
+            <select style={inputStyle} value={f.estado} onChange={(e) => set("estado", e.target.value)}>
+              <option value="activo">Activo</option>
+              <option value="proceso">En proceso</option>
+              <option value="archivado">Archivado</option>
+            </select>
+          </Campo>
           <Campo label="Para qué sirve" ancho>
             <input style={inputStyle} value={f.descripcion} onChange={(e) => set("descripcion", e.target.value)}
               placeholder="Una línea alcanza" />
           </Campo>
-          {f.org && (
-            <Campo label="¿Lo ve el cliente?" ancho>
-              <button className={`pill ${f.visibleCliente ? "on" : ""}`} onClick={() => set("visibleCliente", !f.visibleCliente)}>
-                {f.visibleCliente ? "Sí, aparece en su portal" : "No, solo lo ve el equipo"}
+
+          <div style={{ gridColumn: "1 / -1", padding: 14, borderRadius: 12, background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>¿Lo ve el cliente?</div>
+            <p className="mini" style={{ marginBottom: 10, lineHeight: 1.5 }}>
+              Esto es aparte del estado. El trabajo puede estar terminado y el candado seguir cerrado hasta que vos decidas abrirlo.
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className={`pill ${!f.visibleCliente ? "on" : ""}`} onClick={() => set("visibleCliente", false)}>
+                <Lock size={13} /> Solo interno
               </button>
-            </Campo>
-          )}
+              <button className={`pill ${f.visibleCliente ? "on" : ""}`} onClick={() => set("visibleCliente", true)} disabled={!f.org}>
+                <Unlock size={13} /> Lo ve el cliente
+              </button>
+              {!f.org && <span className="mini" style={{ alignSelf: "center" }}>Elegí un cliente para poder abrirlo.</span>}
+            </div>
+            {f.visibleCliente && modulos.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <Campo label="¿En qué parte de su portal lo ve?">
+                  <select style={inputStyle} value={f.moduloCliente} onChange={(e) => set("moduloCliente", e.target.value)}>
+                    <option value="">Donde corresponda por la etapa</option>
+                    {modulos.map((m) => <option key={m.slug} value={m.slug}>{m.nombre}</option>)}
+                  </select>
+                </Campo>
+              </div>
+            )}
+          </div>
         </div>
 
         <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary btn-sm" disabled={!listo} style={!listo ? { opacity: .5, cursor: "not-allowed" } : undefined}
-            onClick={() => listo && onCrear(f)}>Crear recurso</button>
+          <button className="btn btn-primary btn-sm" disabled={!listo}
+            style={!listo ? { opacity: .5, cursor: "not-allowed" } : undefined}
+            onClick={() => listo && onGuardar(f)}>Guardar recurso</button>
         </div>
       </div>
     </div>
@@ -2684,13 +2853,124 @@ function NuevoRecursoModal({ clientes, ambito, onClose, onCrear }) {
 }
 
 
-/* --- Qué ve el cliente: el equipo abre y cierra cada módulo ------------- */
+/* --- Selector de recurso: elegir uno que ya existe, o crear el primero --- */
+function SelectorRecurso({ valor, onChange, org, area, subarea, clientes, onCrear }) {
+  const [buscando, setBuscando] = useState(false);
+  const [q, setQ] = useState("");
+  const [creando, setCreando] = useState(false);
+  const elegido = valor ? services.recursos.list().find((r) => r.id === valor) : null;
+
+  /* Primero lo de esta cuenta y esta etapa; después el resto. */
+  const candidatos = services.recursos.list()
+    .filter((r) => r.estado === "activo")
+    .filter((r) => !org || !r.org || r.org === org)
+    .filter((r) => (r.nombre + " " + (r.tipo || "")).toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => {
+      const rel = (x) => (x.subarea === subarea ? 0 : x.area === area ? 1 : 2);
+      return rel(a) - rel(b);
+    })
+    .slice(0, 8);
+
+  if (elegido) {
+    const cli = elegido.org ? services.clientes.get(elegido.org) : null;
+    return (
+      <div className="card card-pad" style={{ padding: 13, display: "flex", gap: 11, alignItems: "center" }}>
+        <span style={{ width: 30, height: 30, borderRadius: 8, background: elegido.color, color: "#fff",
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <FileText size={14} />
+        </span>
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <span style={{ display: "block", fontSize: 13.2, fontWeight: 600 }}>{elegido.nombre}</span>
+          <span className="mini" style={{ display: "block" }}>
+            {elegido.tipo}{cli ? ` · ${cli.nombre}` : ""} · {elegido.visibleCliente ? "Lo ve el cliente" : "Solo interno"}
+          </span>
+        </span>
+        {elegido.url && (
+          <button className="icon-btn" style={{ width: 30, height: 30 }}
+            onClick={() => window.open(elegido.url, "_blank", "noopener,noreferrer")}><ExternalLink size={14} /></button>
+        )}
+        <button className="btn btn-ghost btn-sm" onClick={() => onChange(null)}>Quitar</button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {!buscando ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setBuscando(true)}>
+            <Search size={14} /> Seleccionar recurso
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setCreando(true)}>
+            <Plus size={14} /> Crear nuevo
+          </button>
+        </div>
+      ) : (
+        <div className="card" style={{ padding: 8 }}>
+          <input style={{ ...inputStyle, marginBottom: 6 }} value={q} autoFocus
+            onChange={(e) => setQ(e.target.value)} placeholder="Buscar recurso por nombre…" />
+          {candidatos.length === 0 ? (
+            <div style={{ padding: "10px 12px" }}>
+              <p className="mini" style={{ marginBottom: 8 }}>No hay ninguno con ese nombre.</p>
+              <button className="btn btn-primary btn-sm" onClick={() => { setBuscando(false); setCreando(true); }}>
+                <Plus size={14} /> Crear uno nuevo
+              </button>
+            </div>
+          ) : candidatos.map((r) => {
+            const cli = r.org ? services.clientes.get(r.org) : null;
+            return (
+              <button key={r.id} className="row-link" onClick={() => { onChange(r.id); setBuscando(false); }}>
+                <FileText size={14} style={{ color: "var(--muted)", flexShrink: 0 }} />
+                <span style={{ minWidth: 0, textAlign: "left" }}>
+                  <span style={{ display: "block", fontSize: 13 }}>{r.nombre}</span>
+                  <span className="mini" style={{ display: "block" }}>{r.tipo}{cli ? ` · ${cli.nombre}` : " · De la agencia"}</span>
+                </span>
+              </button>
+            );
+          })}
+          <div style={{ display: "flex", gap: 8, padding: "8px 4px 2px" }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setBuscando(false)}>Cancelar</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setBuscando(false); setCreando(true); }}>
+              <Plus size={14} /> Crear nuevo
+            </button>
+          </div>
+        </div>
+      )}
+
+      {creando && (
+        <RecursoModal
+          recurso={{ org: org || "", area: area || "", subarea: subarea || "" }}
+          clientes={clientes}
+          onClose={() => setCreando(false)}
+          onGuardar={async (d) => {
+            const creado = await onCrear(d);
+            if (creado) onChange(creado.id);
+            setCreando(false);
+          }} />
+      )}
+    </>
+  );
+}
+
+
+/* --- Qué ve el cliente: el equipo abre, cierra y escribe cada módulo ---- */
+const ESTADOS_ACCESO = {
+  pendiente:  { label: "Pendiente",  tone: "gray" },
+  solicitado: { label: "Solicitado", tone: "orange" },
+  recibido:   { label: "Recibido",   tone: "blue" },
+  verificado: { label: "Verificado", tone: "green" },
+  no_aplica:  { label: "No aplica",  tone: "gray" },
+};
+
 function HubPortal({ cliente }) {
-  const { cambiarEstadoModulo, guardarAccionModulo, version, mostrar } = useApp();
+  const { cambiarEstadoModulo, guardarAccionModulo, cambiarEstadoAcceso, version, mostrar } = useApp();
   const modulos = useMemo(() => services.modulosCliente.byOrg(cliente.id), [cliente.id, version]);
-  const abiertos = modulos.filter((m) => m.estado === "disponible").length;
+  const accesos = useMemo(() => services.accesos.byOrg(cliente.id), [cliente.id, version]);
   const [editando, setEditando] = useState(null);
   const [borrador, setBorrador] = useState("");
+  const [escribiendo, setEscribiendo] = useState(null);
+  const [tab, setTab] = useState("modulos");
+  const abiertos = modulos.filter((m) => m.estado === "disponible").length;
 
   const guardarEnlace = async (m) => {
     await guardarAccionModulo(m.id, { accion_url: borrador.trim() || null });
@@ -2712,54 +2992,186 @@ function HubPortal({ cliente }) {
         <StatusBadge tone="green" dot>{abiertos} de {modulos.length} abiertos</StatusBadge>
       </div>
 
-      <div className="card">
-        {modulos.map((m) => (
-          <div key={m.id} className="list-row" style={{ alignItems: "center" }}>
-            <span style={{ width: 190, flexShrink: 0, minWidth: 0 }}>
-              <span style={{ display: "block", fontSize: 13.4, fontWeight: 600 }}>{m.nombre}</span>
-              <span className="mini" style={{ display: "block", marginTop: 2 }}>{m.grupo}</span>
-            </span>
-            <span style={{ flex: 1, minWidth: 140 }}>
-              {m.accionTexto ? (
-                editando === m.id ? (
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <input style={inputStyle} value={borrador} autoFocus
-                      placeholder={`Enlace para "${m.accionTexto}"`}
-                      onChange={(e) => setBorrador(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && guardarEnlace(m)} />
-                    <button className="btn btn-primary btn-sm" onClick={() => guardarEnlace(m)}>Guardar</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setEditando(null)}>Cancelar</button>
-                  </div>
-                ) : (
-                  <button className="row-link" style={{ padding: "6px 9px" }}
-                    onClick={() => { setEditando(m.id); setBorrador(m.accionUrl || ""); }}>
-                    <ExternalLink size={13} style={{ color: "var(--muted)", flexShrink: 0 }} />
-                    {m.accionUrl
-                      ? <span className="mini" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.accionUrl}</span>
-                      : <span className="mini" style={{ fontStyle: "italic" }}>Botón "{m.accionTexto}" sin enlace — clic para cargarlo</span>}
-                  </button>
-                )
-              ) : (
-                <span className="mini">{m.descripcion}</span>
-              )}
-            </span>
-            <span style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
-              {Object.entries(ESTADOS_MODULO).map(([k, v]) => (
-                <button key={k} className={`pill ${m.estado === k ? "on" : ""}`}
-                  style={{ padding: "5px 9px", fontSize: 11.5 }}
-                  onClick={() => cambiarEstadoModulo(m.id, k)}>{v.label}</button>
-              ))}
-            </span>
-          </div>
-        ))}
+      <div className="tabs" style={{ marginBottom: 16 }}>
+        <button className={`tab ${tab === "modulos" ? "on" : ""}`} onClick={() => setTab("modulos")}>
+          Módulos del portal
+        </button>
+        <button className={`tab ${tab === "accesos" ? "on" : ""}`} onClick={() => setTab("accesos")}>
+          Accesos que le pedimos · {accesos.filter((a) => a.estado === "verificado").length}/{accesos.length}
+        </button>
       </div>
 
-      <p className="mini" style={{ marginTop: 12, lineHeight: 1.55, maxWidth: 620 }}>
+      {tab === "modulos" ? (
+        <div className="card">
+          {modulos.map((m) => (
+            <div key={m.id} className="list-row" style={{ alignItems: "center" }}>
+              <span style={{ width: 180, flexShrink: 0, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 13.4, fontWeight: 600 }}>{m.nombre}</span>
+                <span className="mini" style={{ display: "block", marginTop: 2 }}>{m.grupo}</span>
+              </span>
+              <span style={{ flex: 1, minWidth: 140 }}>
+                {m.accionTexto ? (
+                  editando === m.id ? (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input style={inputStyle} value={borrador} autoFocus
+                        placeholder={`Enlace para "${m.accionTexto}"`}
+                        onChange={(e) => setBorrador(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && guardarEnlace(m)} />
+                      <button className="btn btn-primary btn-sm" onClick={() => guardarEnlace(m)}>Guardar</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setEditando(null)}>Cancelar</button>
+                    </div>
+                  ) : (
+                    <button className="row-link" style={{ padding: "6px 9px" }}
+                      onClick={() => { setEditando(m.id); setBorrador(m.accionUrl || ""); }}>
+                      <ExternalLink size={13} style={{ color: "var(--muted)", flexShrink: 0 }} />
+                      {m.accionUrl
+                        ? <span className="mini" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.accionUrl}</span>
+                        : <span className="mini" style={{ fontStyle: "italic" }}>Botón "{m.accionTexto}" sin enlace — clic para cargarlo</span>}
+                    </button>
+                  )
+                ) : (
+                  <span className="mini">{m.descripcion}</span>
+                )}
+              </span>
+              <span style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setEscribiendo(m)}>
+                  <FileText size={13} /> Escribir
+                  {services.contenidoModulo.byModulo(m.id).length > 0 && ` (${services.contenidoModulo.byModulo(m.id).length})`}
+                </button>
+                {Object.entries(ESTADOS_MODULO).map(([k, v]) => (
+                  <button key={k} className={`pill ${m.estado === k ? "on" : ""}`}
+                    style={{ padding: "5px 9px", fontSize: 11.5 }}
+                    onClick={() => cambiarEstadoModulo(m.id, k)}>{v.label}</button>
+                ))}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="card">
+          {accesos.map((a) => (
+            <div key={a.id} className="list-row" style={{ alignItems: "flex-start" }}>
+              <span style={{ width: 200, flexShrink: 0, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 13.4, fontWeight: 600 }}>{a.plataforma}</span>
+                <span className="mini" style={{ display: "block", marginTop: 2 }}>{a.necesitamos}</span>
+              </span>
+              <span className="mini" style={{ flex: 1, minWidth: 140, lineHeight: 1.5 }}>{a.porQue}</span>
+              <span style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {Object.entries(ESTADOS_ACCESO).map(([k, v]) => (
+                  <button key={k} className={`pill ${a.estado === k ? "on" : ""}`}
+                    style={{ padding: "5px 9px", fontSize: 11.5 }}
+                    onClick={() => cambiarEstadoAcceso(a.id, k)}>{v.label}</button>
+                ))}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {escribiendo && <EditorModulo modulo={escribiendo} onClose={() => setEscribiendo(null)} />}
+
+      <p className="mini" style={{ marginTop: 12, lineHeight: 1.55, maxWidth: 640 }}>
         El cliente nunca puede abrir un módulo por su cuenta: el recorrido avanza cuando el equipo lo decide.
         Los módulos con botón —Onboarding, Reunión estratégica, Material— necesitan su enlace: ahí pegás el Typeform,
         el Calendly o la carpeta de Drive de {cliente.nombre}.
       </p>
     </>
+  );
+}
+
+
+/* --- Escribir lo que el cliente va a leer -------------------------------
+   El Business Brief, el Mapa de fugas, el ICP: los escribe el equipo desde
+   acá. Nada de cargar textos por consola.                                 */
+function EditorModulo({ modulo, onClose }) {
+  const { guardarBloque, borrarBloque, cambiarEstadoModulo, version, mostrar } = useApp();
+  const bloques = useMemo(() => services.contenidoModulo.byModulo(modulo.id), [modulo.id, version]);
+  const [editando, setEditando] = useState(null);
+  const [f, setF] = useState({ bloque: "", cuerpo: "" });
+
+  const abrirNuevo = () => { setF({ bloque: "", cuerpo: "" }); setEditando("nuevo"); };
+  const abrirBloque = (b) => { setF({ bloque: b.bloque, cuerpo: b.cuerpo || "" }); setEditando(b.id); };
+
+  const guardar = async () => {
+    if (!f.bloque.trim()) { mostrar("Ponele un título a la sección."); return; }
+    try {
+      await guardarBloque(modulo.id, { id: editando === "nuevo" ? null : editando, ...f });
+      setEditando(null);
+    } catch (e) { mostrar(e.message); }
+  };
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 640 }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="h2">{modulo.nombre}</div>
+            <div className="mini" style={{ marginTop: 3 }}>Esto es lo que va a leer el cliente cuando le abras el módulo.</div>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="Cerrar"><X size={17} /></button>
+        </div>
+
+        <div style={{ padding: 20, maxHeight: "56vh", overflowY: "auto" }}>
+          {editando ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+              <Campo label="Título de la sección">
+                <input style={inputStyle} value={f.bloque} autoFocus
+                  onChange={(e) => setF((x) => ({ ...x, bloque: e.target.value }))}
+                  placeholder="Qué hacen, Modelo de negocio, Cuello de botella…" />
+              </Campo>
+              <Campo label="Texto">
+                <textarea style={{ ...inputStyle, minHeight: 150, resize: "vertical", lineHeight: 1.6 }}
+                  value={f.cuerpo} onChange={(e) => setF((x) => ({ ...x, cuerpo: e.target.value }))}
+                  placeholder="Escribilo como se lo explicarías al cliente en una reunión." />
+              </Campo>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-primary btn-sm" onClick={guardar}>Guardar sección</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setEditando(null)}>Cancelar</button>
+              </div>
+            </div>
+          ) : bloques.length === 0 ? (
+            <Empty icon={FileText} titulo="Todavía no escribiste nada"
+              texto="Sumá la primera sección. Podés ir guardando de a partes: el cliente no ve nada hasta que abras el candado."
+              cta="Escribir la primera" onCta={abrirNuevo} />
+          ) : (
+            <>
+              {bloques.map((b) => (
+                <div key={b.id} className="card card-pad" style={{ marginBottom: 10, boxShadow: "none" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <span className="eyebrow">{b.bloque}</span>
+                    <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+                      <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => abrirBloque(b)}>
+                        <Settings size={13} />
+                      </button>
+                      <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => borrarBloque(b.id)}>
+                        <X size={13} />
+                      </button>
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 13.3, lineHeight: 1.6, margin: 0, color: "var(--muted)" }}>{b.cuerpo}</p>
+                </div>
+              ))}
+              <button className="btn btn-ghost btn-sm" onClick={abrirNuevo}><Plus size={14} /> Agregar sección</button>
+            </>
+          )}
+        </div>
+
+        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span className="mini" style={{ flex: 1, minWidth: 160 }}>
+            {modulo.estado === "disponible" ? "El cliente ya lo está viendo." : "El cliente todavía no lo ve."}
+          </span>
+          {modulo.estado === "disponible" ? (
+            <button className="btn btn-ghost btn-sm" onClick={() => cambiarEstadoModulo(modulo.id, "revision")}>
+              <Lock size={14} /> Cerrar de nuevo
+            </button>
+          ) : (
+            <button className="btn btn-primary btn-sm" onClick={() => cambiarEstadoModulo(modulo.id, "disponible")}>
+              <Unlock size={14} /> Abrírselo al cliente
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2793,13 +3205,6 @@ function LoginScreen({ onEntrar }) {
     const { mensaje } = await auth.recuperar(email);
     setCargando(false); setAviso(mensaje);
   };
-
-  const demo = [
-    { email: "facu@marketingenflujo.com", quien: "Facu · CEO", detalle: "Ve las 6 cuentas y los números" },
-    { email: "juli@marketingenflujo.com", quien: "Juli · Editor", detalle: "Contenido y 2 cuentas asignadas" },
-    { email: "sofi@marketingenflujo.com", quien: "Sofi · Media Buyer", detalle: "Paid y 2 cuentas asignadas" },
-    { email: "maria@nordikastudio.com", quien: "María · Cliente", detalle: "Solo el espacio de Nórdika" },
-  ];
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", background: "var(--bg)" }}>
@@ -2856,23 +3261,6 @@ function LoginScreen({ onEntrar }) {
             </button>
           </div>
 
-          <div style={{ marginTop: 30, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
-            <div className="eyebrow" style={{ marginBottom: 9 }}>Cuentas cargadas</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {demo.map((d) => (
-                <button key={d.email} className="row-link" onClick={() => { setEmail(d.email); setPass("FlujoOS2026!"); setError(null); }}>
-                  <span className="avatar" style={{ width: 24, height: 24, fontSize: 9.5 }}>{d.quien[0]}</span>
-                  <span style={{ minWidth: 0, textAlign: "left" }}>
-                    <span style={{ display: "block", fontSize: 12.5, fontWeight: 600 }}>{d.quien}</span>
-                    <span className="mini" style={{ display: "block", fontSize: 11 }}>{d.detalle}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-            <p className="mini" style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5 }}>
-              Contraseña provisional para todas: FlujoOS2026! — cambiala en cuanto entres.
-            </p>
-          </div>
         </div>
       </div>
 
@@ -3231,9 +3619,19 @@ export default function MarketingEnFlujoOS() {
   };
 
   const crearRecurso = async (d) => {
-    await acciones.crearRecurso(d);
+    const creado = await acciones.crearRecurso(d, perfil.id);
     setRecursos([...services.recursos.list()]);
+    setVersion((v) => v + 1);
     mostrar("Recurso creado. Ya aparece en la etapa donde lo asignaste.");
+    return creado;
+  };
+
+  const duplicarRecurso = async (id) => {
+    try {
+      await acciones.duplicarRecurso(id, perfil.id);
+      setRecursos([...services.recursos.list()]);
+      mostrar("Recurso duplicado. Cambiale el nombre y el enlace.");
+    } catch (e) { mostrar(e.message); }
   };
 
   const borrarRecurso = async (id) => {
@@ -3261,6 +3659,21 @@ export default function MarketingEnFlujoOS() {
     catch (e) { mostrar(e.message); }
   };
 
+  const cambiarEstadoAcceso = async (id, estado) => {
+    try { await acciones.cambiarEstadoAcceso(id, estado); setVersion((v) => v + 1); }
+    catch (e) { mostrar(e.message); }
+  };
+
+  const guardarBloque = async (moduleId, bloque) => {
+    await acciones.guardarBloque(moduleId, bloque);
+    setVersion((v) => v + 1);
+  };
+
+  const borrarBloque = async (id) => {
+    try { await acciones.borrarBloque(id); setVersion((v) => v + 1); }
+    catch (e) { mostrar(e.message); }
+  };
+
   const cambiarEstadoModulo = async (moduleId, estado) => {
     try { await acciones.cambiarEstadoModulo(moduleId, estado); setVersion((v) => v + 1); }
     catch (e) { mostrar(e.message); }
@@ -3282,8 +3695,9 @@ export default function MarketingEnFlujoOS() {
     session, perfil, rolActivo, setVerComo, verComo, salir,
     usuarios, invitaciones, invitar, cambiarEstadoUsuario, cambiarRolUsuario, cambiarEstadoTarea,
     clientesVisibles, getCliente, accesoA, crearCliente, version,
-    recursos, guardarAvance, guardarRecurso, crearRecurso, borrarRecurso, cambiarEstadoModulo,
+    recursos, guardarAvance, guardarRecurso, crearRecurso, duplicarRecurso, borrarRecurso, cambiarEstadoModulo,
     crearRegistro, cambiarEstadoRegistro, crearTarea, guardarAccionModulo,
+    cambiarEstadoAcceso, guardarBloque, borrarBloque,
   };
 
   const esCliente = perfil ? ROLES[rolActivo].tipo === "cliente" : false;
