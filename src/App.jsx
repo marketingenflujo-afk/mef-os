@@ -198,7 +198,7 @@ function ClientCard({ cliente, onOpen }) {
   );
 }
 
-function TaskCard({ tarea, onToggle }) {
+function TaskCard({ tarea, onToggle, onBorrar }) {
   const est = ESTADOS[tarea.estado];
   const pri = PRIORIDADES[tarea.prioridad];
   const cli = tarea.cliente ? services.clientes.get(tarea.cliente) : null;
@@ -218,6 +218,10 @@ function TaskCard({ tarea, onToggle }) {
       <StatusBadge tone={pri.tone}>{pri.label}</StatusBadge>
       <StatusBadge tone={est.tone} dot>{est.label}</StatusBadge>
       <span className="mini" style={{ width: 46, textAlign: "right", flexShrink: 0 }}>{tarea.fecha}</span>
+      {onBorrar && (
+        <button className="icon-btn" style={{ width: 30, height: 30, flexShrink: 0 }} title="Eliminar tarea"
+          onClick={() => onBorrar(tarea)}><X size={14} /></button>
+      )}
     </div>
   );
 }
@@ -512,6 +516,32 @@ function VistaInicio() {
         </div>
       </div>
 
+      {clientesVisibles.length === 0 && puede(rolActivo, "clientes.todos") && (
+        <div className="card card-pad" style={{ marginBottom: 22, borderColor: "var(--blue-light)", background: "var(--blue-soft)" }}>
+          <div style={{ display: "flex", gap: 13, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <span className="area-ico" style={{ background: "var(--blue)", color: "#fff", flexShrink: 0 }}>
+              <Rocket size={20} />
+            </span>
+            <div style={{ minWidth: 220, flex: 1 }}>
+              <div className="h3">Tu sistema está limpio y listo</div>
+              <p className="mini" style={{ marginTop: 5, lineHeight: 1.6 }}>
+                Todavía no hay clientes cargados, así que los números están en cero: eso es correcto, no es un error.
+                Tus 16 etapas de trabajo, 3 procesos, 7 SOPs y 21 herramientas ya están esperando.
+                Los números se van a llenar solos a medida que cargues clientes y trabajo real.
+              </p>
+              <div style={{ display: "flex", gap: 8, marginTop: 13, flexWrap: "wrap" }}>
+                <button className="btn btn-primary btn-sm" onClick={() => go({ view: "clientes" })}>
+                  <Plus size={14} /> Cargar mi primer cliente
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => go({ view: "recursos" })}>
+                  <Link2 size={14} /> Cargar los enlaces de mis herramientas
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="split">
         <div className="col">
           <div className="grid g4" style={{ marginBottom: 22 }}>
@@ -523,7 +553,7 @@ function VistaInicio() {
               delta={trabadas ? `${trabadas} trabadas` : "Ninguna trabada"} deltaTone={trabadas ? "orange" : "green"}
               onClick={() => go({ view: "tareas" })} />
             <DashboardCard icon={UserPlus} label="Leads del mes" value={leads || "—"}
-              delta={leads ? "Según campañas cargadas" : "Conectá Meta Ads"} deltaTone="muted"
+              delta={leads ? "Según campañas cargadas" : "Sin campañas todavía"} deltaTone="muted"
               onClick={() => go({ view: "sub", areaId: "ventas", subId: "leads" })} />
           </div>
 
@@ -773,7 +803,18 @@ function VistaClientes() {
       </div>
 
       {lista.length === 0 ? (
-        <div className="card"><Empty icon={Users} titulo="No hay clientes con ese filtro" texto="Probá con otro estado o limpiá la búsqueda." /></div>
+        <div className="card">
+          {clientesVisibles.length === 0 ? (
+            <Empty icon={Users} titulo="Todavía no tenés clientes cargados"
+              texto={puedeCrear
+                ? "Creá el primero y el sistema arma solo su portal, su recorrido de 16 etapas y la lista de accesos que le vas a pedir."
+                : "Cuando te asignen una cuenta, va a aparecer acá."}
+              cta={puedeCrear ? "Crear el primer cliente" : undefined} onCta={() => setNuevo(true)} />
+          ) : (
+            <Empty icon={Search} titulo="Ninguno coincide con la búsqueda"
+              texto="Probá con otro estado o limpiá lo que escribiste." />
+          )}
+        </div>
       ) : (
         <div className="grid g3">
           {lista.map((c) => <ClientCard key={c.id} cliente={c} onOpen={(id) => go({ view: "cliente", id })} />)}
@@ -905,7 +946,8 @@ const HUB_DATA = {
 };
 
 function VistaClienteHub({ id, tabInicial, modoCliente = false }) {
-  const { go, perfil, getCliente, accesoA, cambiarEstadoTarea, version } = useApp();
+  const { go, perfil, getCliente, accesoA, cambiarEstadoTarea, borrarCliente, version } = useApp();
+  const [aBorrar, setABorrar] = useState(false);
   const cliente = getCliente(id);
   const [sec, setSec] = useState(tabInicial || "resumen");
   const [abiertos, setAbiertos] = useState(["Contenido"]);
@@ -1002,13 +1044,28 @@ function VistaClienteHub({ id, tabInicial, modoCliente = false }) {
 
   return (
     <>
+      {aBorrar && (
+        <ConfirmarBorrado
+          titulo={`¿Borrar ${cliente.nombre}?`}
+          nombreExacto={cliente.nombre}
+          queSePierde="Se van con él su portal completo, las tareas, campañas, contenido, reuniones, métricas, accesos y los recursos de esta cuenta. Las personas del cliente pierden el acceso."
+          onCancelar={() => setABorrar(false)}
+          onConfirmar={async () => { await borrarCliente(cliente.id); go({ view: "clientes" }); }} />
+      )}
+
       {modoCliente ? (
         <div style={{ marginBottom: 18 }}>
           <h1 className="h1">Hola, {perfil.nombre} 👋</h1>
           <p className="sub">Este es el espacio de {cliente.nombre}. Acá está todo lo que estamos haciendo con tu marca.</p>
         </div>
       ) : (
-        <button className="btn btn-ghost btn-sm" onClick={() => go({ view: "clientes" })} style={{ marginBottom: 16 }}><ArrowLeft size={14} /> Todos los clientes</button>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => go({ view: "clientes" })}><ArrowLeft size={14} /> Todos los clientes</button>
+          {puede(perfil.rol, "clientes.todos") && (
+            <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto", color: "var(--red)" }}
+              onClick={() => setABorrar(true)}><X size={14} /> Eliminar cliente</button>
+          )}
+        </div>
       )}
 
       <div className="card card-pad" style={{ marginBottom: 20, padding: 22 }}>
@@ -1073,6 +1130,7 @@ function VistaClienteHub({ id, tabInicial, modoCliente = false }) {
 function HubResumen({ cliente, tareas, equipo = [], onGo }) {
   const { perfil, quitarMiembro } = useApp();
   const [sumando, setSumando] = useState(false);
+  const [aQuitar, setAQuitar] = useState(null);
   const k = cliente.kpis;
   return (
     <>
@@ -1149,7 +1207,7 @@ function HubResumen({ cliente, tareas, equipo = [], onGo }) {
                   <StatusBadge tone={ROLES[m.perfil.rol].tipo === "cliente" ? "gray" : "blue"}>{m.rolOrg}</StatusBadge>
                   {puede(perfil.rol, "clientes.todos") && (
                     <button className="icon-btn" style={{ width: 28, height: 28 }} title="Quitar de esta cuenta"
-                      onClick={() => quitarMiembro(m.id)}><X size={13} /></button>
+                      onClick={() => setAQuitar(m)}><X size={13} /></button>
                   )}
                 </span>
               </div>
@@ -1161,6 +1219,13 @@ function HubResumen({ cliente, tareas, equipo = [], onGo }) {
       {sumando && (
         <AgregarMiembroModal cliente={cliente} yaEstan={equipo.map((m) => m.perfil.id)}
           onClose={() => setSumando(false)} />
+      )}
+
+      {aQuitar && (
+        <ConfirmarBorrado titulo={`¿Sacar a ${aQuitar.perfil.nombre} de ${cliente.nombre}?`}
+          queSePierde="Pierde el acceso a esta cuenta. Su usuario sigue existiendo y puede volver a asignarse cuando quieras."
+          onCancelar={() => setAQuitar(null)}
+          onConfirmar={async () => { await quitarMiembro(aQuitar.id); setAQuitar(null); }} />
       )}
     </>
   );
@@ -1216,7 +1281,9 @@ function VistaArea({ id }) {
 }
 
 function VistaSubmodulo({ areaId, subId }) {
-  const { go, perfil, clientesVisibles, crearRegistro, cambiarEstadoRegistro, crearRecurso, abrirEnlace, version } = useApp();
+  const { go, perfil, clientesVisibles, crearRegistro, cambiarEstadoRegistro, borrarRegistro,
+          crearRecurso, abrirEnlace, version } = useApp();
+  const [aBorrar, setABorrar] = useState(null);
   const area = AREAS.find((a) => a.id === areaId);
   const sub = area?.items.find((i) => i.id === subId);
   const [nuevo, setNuevo] = useState(false);
@@ -1268,6 +1335,8 @@ function VistaSubmodulo({ areaId, subId }) {
                   </select>
                 </span>
                 <span style={{ width: 120, textAlign: "right", flexShrink: 0, fontSize: 13, fontWeight: 600 }}>{r.extra || "—"}</span>
+                <button className="icon-btn" style={{ width: 30, height: 30, flexShrink: 0 }} title="Eliminar"
+                  onClick={() => setABorrar(r)}><X size={14} /></button>
                 {r.recurso && (() => {
                   const rec = services.recursos.list().find((x) => x.id === r.recurso);
                   if (!rec) return null;
@@ -1295,6 +1364,13 @@ function VistaSubmodulo({ areaId, subId }) {
           ))}
         </div>
       </div>
+
+      {aBorrar && (
+        <ConfirmarBorrado titulo="¿Borrar este registro?"
+          queSePierde={`"${aBorrar.titulo}" se elimina de ${sub.name}. Si tenía un recurso vinculado, el recurso no se borra: sigue en Recursos.`}
+          onCancelar={() => setABorrar(null)}
+          onConfirmar={async () => { await borrarRegistro(aBorrar.id); setABorrar(null); }} />
+      )}
 
       {nuevo && (
         <NuevoRegistroModal titulo={sub.name} clientes={clientesVisibles} area={areaId} subarea={clave}
@@ -1476,8 +1552,10 @@ function VistaProceso({ id }) {
 
 /* --- Tareas ------------------------------------------------------------- */
 function VistaTareas() {
-  const { cambiarEstadoTarea, crearTarea, clientesVisibles, usuarios, version } = useApp();
+  const { cambiarEstadoTarea, crearTarea, borrarTarea, clientesVisibles, usuarios, perfil, version } = useApp();
   const [nueva, setNueva] = useState(false);
+  const [aBorrar, setABorrar] = useState(null);
+  const puedeBorrar = puede(perfil.rol, "clientes.todos");
   const tareas = useMemo(() => services.tareas.list(), [version]);
   const [estado, setEstado] = useState("abiertas");
   const [q, setQ] = useState("");
@@ -1521,8 +1599,18 @@ function VistaTareas() {
         {lista.length === 0
           ? <Empty icon={CheckCircle2} titulo="Todo en orden" texto="No hay tareas que coincidan con este filtro."
               cta="Nueva tarea" onCta={() => setNueva(true)} />
-          : lista.map((t) => <TaskCard key={t.id} tarea={t} onToggle={toggle} />)}
+          : lista.map((t) => (
+              <TaskCard key={t.id} tarea={t} onToggle={toggle}
+                onBorrar={puedeBorrar ? setABorrar : undefined} />
+            ))}
       </div>
+
+      {aBorrar && (
+        <ConfirmarBorrado titulo="¿Borrar esta tarea?"
+          queSePierde={`"${aBorrar.titulo}" desaparece para todo el equipo.`}
+          onCancelar={() => setABorrar(null)}
+          onConfirmar={async () => { await borrarTarea(aBorrar.id); setABorrar(null); }} />
+      )}
 
       {nueva && (
         <NuevaTareaModal clientes={clientesVisibles} usuarios={usuarios}
@@ -2659,6 +2747,7 @@ function VistaRecursos() {
   const [fArea, setFArea] = useState("todas");
   const [fVis, setFVis] = useState("todas");
   const [editar, setEditar] = useState(null);   // recurso o "nuevo"
+  const [aBorrar, setABorrar] = useState(null);
 
   const lista = recursos
     .filter((r) => fCliente === "todos" || (fCliente === "global" ? !r.org : r.org === fCliente))
@@ -2766,14 +2855,21 @@ function VistaRecursos() {
                 <button className="icon-btn" style={{ width: 30, height: 30 }} title="Duplicar"
                   onClick={() => duplicarRecurso(r.id)}><Copy size={14} /></button>
                 {puede(perfil.rol, "*") && (
-                  <button className="icon-btn" style={{ width: 30, height: 30 }} title="Borrar"
-                    onClick={() => borrarRecurso(r.id)}><X size={14} /></button>
+                  <button className="icon-btn" style={{ width: 30, height: 30 }} title="Eliminar"
+                    onClick={() => setABorrar(r)}><X size={14} /></button>
                 )}
               </span>
             </div>
           );
         })}
       </div>
+
+      {aBorrar && (
+        <ConfirmarBorrado titulo={`¿Borrar "${aBorrar.nombre}"?`}
+          queSePierde="Se borra del sistema y desaparece de las etapas donde estaba enganchado. El archivo o la carpeta en la herramienta externa no se toca: sigue existiendo."
+          onCancelar={() => setABorrar(null)}
+          onConfirmar={async () => { await borrarRecurso(aBorrar.id); setABorrar(null); }} />
+      )}
 
       {editar && (
         <RecursoModal
@@ -3143,6 +3239,7 @@ function EditorModulo({ modulo, onClose }) {
   const { guardarBloque, borrarBloque, cambiarEstadoModulo, version, mostrar } = useApp();
   const bloques = useMemo(() => services.contenidoModulo.byModulo(modulo.id), [modulo.id, version]);
   const [editando, setEditando] = useState(null);
+  const [aBorrar, setABorrar] = useState(null);
   const [f, setF] = useState({ bloque: "", cuerpo: "" });
 
   const abrirNuevo = () => { setF({ bloque: "", cuerpo: "" }); setEditando("nuevo"); };
@@ -3155,6 +3252,13 @@ function EditorModulo({ modulo, onClose }) {
       setEditando(null);
     } catch (e) { mostrar(e.message); }
   };
+
+  if (aBorrar) return (
+    <ConfirmarBorrado titulo={`¿Borrar la sección "${aBorrar.bloque}"?`}
+      queSePierde="El texto se pierde. Si el módulo ya estaba abierto, el cliente deja de verlo."
+      onCancelar={() => setABorrar(null)}
+      onConfirmar={async () => { await borrarBloque(aBorrar.id); setABorrar(null); }} />
+  );
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -3199,7 +3303,8 @@ function EditorModulo({ modulo, onClose }) {
                       <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => abrirBloque(b)}>
                         <Settings size={13} />
                       </button>
-                      <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => borrarBloque(b.id)}>
+                      <button className="icon-btn" style={{ width: 28, height: 28 }} title="Eliminar sección"
+                        onClick={() => setABorrar(b)}>
                         <X size={13} />
                       </button>
                     </span>
@@ -3299,6 +3404,58 @@ function AgregarMiembroModal({ cliente, yaEstan, onClose }) {
         <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary btn-sm" onClick={guardar}>Dar acceso</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* --- Confirmar antes de borrar ------------------------------------------
+   Un borrado no se deshace. El modal dice en castellano qué se va a perder
+   y, cuando el borrado arrastra otras cosas, obliga a escribir el nombre. */
+function ConfirmarBorrado({ titulo, queSePierde, nombreExacto, onCancelar, onConfirmar }) {
+  const [escrito, setEscrito] = useState("");
+  const [borrando, setBorrando] = useState(false);
+  const listo = !nombreExacto || escrito.trim().toLowerCase() === nombreExacto.toLowerCase();
+
+  const confirmar = async () => {
+    setBorrando(true);
+    try { await onConfirmar(); } finally { setBorrando(false); }
+  };
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onCancelar()}>
+      <div className="modal" style={{ maxWidth: 460 }}>
+        <div style={{ padding: "18px 20px", display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <span className="stat-ico" style={{ width: 38, height: 38, background: "var(--red-soft)", color: "var(--red)", flexShrink: 0 }}>
+            <AlertCircle size={18} />
+          </span>
+          <div style={{ minWidth: 0 }}>
+            <div className="h2">{titulo}</div>
+            <p className="mini" style={{ marginTop: 6, lineHeight: 1.6 }}>{queSePierde}</p>
+            <p className="mini" style={{ marginTop: 8, fontWeight: 600, color: "var(--red)" }}>Esto no se puede deshacer.</p>
+          </div>
+        </div>
+
+        {nombreExacto && (
+          <div style={{ padding: "0 20px 16px" }}>
+            <Campo label={`Escribí "${nombreExacto}" para confirmar`}>
+              <input style={inputStyle} value={escrito} autoFocus
+                onChange={(e) => setEscrito(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && listo && confirmar()} />
+            </Campo>
+          </div>
+        )}
+
+        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button className="btn btn-ghost btn-sm" onClick={onCancelar}>Cancelar</button>
+          <button className="btn btn-sm" disabled={!listo || borrando}
+            style={{ background: listo ? "var(--red)" : "var(--border)", color: "#fff",
+              cursor: listo ? "pointer" : "not-allowed", opacity: borrando ? .7 : 1 }}
+            onClick={() => listo && confirmar()}>
+            {borrando ? "Borrando…" : "Sí, borrar"}
+          </button>
         </div>
       </div>
     </div>
@@ -3793,6 +3950,21 @@ export default function MarketingEnFlujoOS() {
     catch (e) { mostrar(e.message); }
   };
 
+  const borrarCliente = async (orgId) => {
+    try { await acciones.borrarCliente(orgId); setVersion((v) => v + 1); mostrar("Cliente eliminado."); }
+    catch (e) { mostrar(e.message); }
+  };
+
+  const borrarTarea = async (id) => {
+    try { await acciones.borrarTarea(id); setVersion((v) => v + 1); }
+    catch (e) { mostrar(e.message); }
+  };
+
+  const borrarRegistro = async (id) => {
+    try { await acciones.borrarRegistro(id); setVersion((v) => v + 1); }
+    catch (e) { mostrar(e.message); }
+  };
+
   const agregarMiembro = async (orgId, userId, rolOrg) => {
     await acciones.agregarMiembro(orgId, userId, rolOrg);
     setVersion((v) => v + 1);
@@ -3843,6 +4015,7 @@ export default function MarketingEnFlujoOS() {
     recursos, guardarAvance, guardarRecurso, crearRecurso, duplicarRecurso, borrarRecurso, cambiarEstadoModulo,
     crearRegistro, cambiarEstadoRegistro, crearTarea, guardarAccionModulo,
     cambiarEstadoAcceso, guardarBloque, borrarBloque, agregarMiembro, quitarMiembro,
+    borrarCliente, borrarTarea, borrarRegistro,
   };
 
   const esCliente = perfil ? ROLES[rolActivo].tipo === "cliente" : false;

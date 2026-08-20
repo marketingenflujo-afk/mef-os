@@ -388,6 +388,33 @@ export const acciones = {
     cache.tareas = [mapTarea(data, cache.usuarios, cache.proyectos), ...cache.tareas];
   },
 
+  /* --- Borrados --------------------------------------------------------
+     Borrar una organización se lleva en cascada su portal, tareas, campañas,
+     contenido, reuniones, métricas, accesos y recursos. Por eso la interfaz
+     siempre pide confirmación antes de llamar acá. */
+  async borrarCliente(orgId) {
+    const { error } = await supabase.from("organizations").delete().eq("id", orgId);
+    if (error) throw new Error(traducirEscritura(error));
+    cache.clientes = cache.clientes.filter((c) => c.id !== orgId);
+    cache.membresias = cache.membresias.filter((m) => m.org !== orgId);
+    cache.tareas = cache.tareas.filter((t) => t.cliente !== orgId);
+    cache.proyectos = cache.proyectos.filter((p) => p.cliente !== orgId);
+    cache.contenido = cache.contenido.filter((c) => c.cliente !== orgId);
+    cache.campanas = cache.campanas.filter((c) => c.cliente !== orgId);
+    cache.reuniones = cache.reuniones.filter((r) => r.cliente !== orgId);
+    cache.modulosCliente = cache.modulosCliente.filter((m) => m.org !== orgId);
+    cache.accesos = cache.accesos.filter((a) => a.org !== orgId);
+    cache.recursos = cache.recursos.filter((r) => r.org !== orgId);
+    cache.registros = cache.registros.filter((r) => r.org !== orgId);
+    cache.eventos = armarEventos(cache);
+  },
+
+  async borrarTarea(id) {
+    const { error } = await supabase.from("tasks").delete().eq("id", id);
+    if (error) throw new Error(traducirEscritura(error));
+    cache.tareas = cache.tareas.filter((t) => t.id !== id);
+  },
+
   /* --- Quién entra a cada cuenta --------------------------------------- */
   async agregarMiembro(orgId, userId, rolOrg) {
     const { data, error } = await supabase.from("organization_members")
