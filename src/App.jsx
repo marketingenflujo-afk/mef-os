@@ -13,10 +13,10 @@ import {
 import "./design/system.css";
 import { ROLES, puede } from "./auth/roles";
 import {
-  TONE, ESTADOS, PRIORIDADES, AREAS, ESTADO_CLIENTE, TOOLS_INIT,
+  TONE, ESTADOS, PRIORIDADES, AREAS, ESTADO_CLIENTE,
   PROMPTS, AUTOMATIZACIONES, TIPO_EVENTO, QUICK_INIT, FLUJO,
 } from "./data/catalogo";
-import { services, acciones, cargarDatos } from "./services/store";
+import { services, acciones, cargarDatos, normalizarUrl } from "./services/store";
 import { auth } from "./services/auth";
 
 /* ============================================================================
@@ -158,11 +158,11 @@ function ToolCard({ tool, onOpen, compact = false }) {
     <>
       <span style={{ width: compact ? 24 : 34, height: compact ? 24 : 34, borderRadius: compact ? 7 : 9, background: tool.color,
         color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: compact ? 11 : 13, fontWeight: 800, flexShrink: 0 }}>
-        {tool.letra}
+        {tool.letra || tool.nombre.slice(0, 1).toUpperCase()}
       </span>
       <span style={{ minWidth: 0, textAlign: "left", flex: 1 }}>
         <span style={{ display: "block", fontSize: compact ? 13 : 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tool.nombre}</span>
-        {!compact && <span className="mini" style={{ display: "block", marginTop: 2 }}>{tool.desc}</span>}
+        {!compact && <span className="mini" style={{ display: "block", marginTop: 2 }}>{tool.descripcion || tool.desc}</span>}
       </span>
       <ExternalLink size={14} style={{ color: "var(--muted)", flexShrink: 0 }} />
     </>
@@ -311,7 +311,9 @@ function SearchModal({ open, onClose, onGo }) {
     services.prompts.list().forEach((p) => idx.push({ k: "Prompt", t: p.nombre, s: p.cat, icon: Sparkles, to: { view: "prompts" } }));
     services.tareas.list().forEach((t) => idx.push({ k: "Tarea", t: t.titulo, s: `${t.area} · ${t.responsable}`, icon: CheckSquare, to: { view: "tareas" } }));
     services.biblioteca.list().forEach((b) => idx.push({ k: b.tipo, t: b.nombre, s: b.area, icon: BookOpen, to: { view: "biblioteca" } }));
-    TOOLS_INIT.forEach((t) => idx.push({ k: "Herramienta", t: t.nombre, s: t.desc, icon: Link2, to: { view: "herramientas" } }));
+    services.recursos.list().forEach((r) => idx.push({
+      k: r.org ? "Recurso" : "Herramienta", t: r.nombre,
+      s: r.descripcion || r.tipo, icon: Link2, to: { view: "recursos" } }));
     services.automatizaciones.list().forEach((a) => idx.push({ k: "Automatización", t: a.nombre, s: a.desc, icon: Zap, to: { view: "automatizaciones" } }));
     idx.push({ k: "Vista", t: "Dashboard CEO", s: "Números de toda la agencia", icon: Crown, to: { view: "ceo" } });
     idx.push({ k: "Vista", t: "Calendario", s: "Reuniones, entregas y publicaciones", icon: Calendar, to: { view: "calendario" } });
@@ -481,7 +483,8 @@ function FlujoRibbon({ onGo }) {
 
 /* --- Inicio ------------------------------------------------------------- */
 function VistaInicio() {
-  const { go, tools, abrirTool, quick, notis, perfil, rolActivo, clientesVisibles, version, now } = useApp();
+  const { go, abrirEnlace, quick, notis, perfil, rolActivo, clientesVisibles, recursos, version, now } = useApp();
+  const herramientas = recursos.filter((r) => !r.org && r.estado === "activo");
   const activos = clientesVisibles.filter((c) => c.estado === "activo").length;
   const tareas = useMemo(() => services.tareas.list(), [version]);
   const proyectos = clientesVisibles.reduce((s, c) => s + c.proyectos, 0);
@@ -566,7 +569,11 @@ function VistaInicio() {
               <button className="mini" style={{ marginLeft: "auto", color: "var(--blue)", fontWeight: 600 }} onClick={() => go({ view: "herramientas" })}>Ver todas</button>
             </div>
             <div style={{ padding: "0 8px 10px" }}>
-              {tools.slice(0, 8).map((t) => <ToolCard key={t.id} tool={t} compact onOpen={abrirTool} />)}
+              {herramientas.length === 0
+                ? <div className="mini" style={{ padding: "6px 16px 12px" }}>Cargá tus herramientas desde Recursos.</div>
+                : herramientas.slice(0, 8).map((t) => (
+                    <ToolCard key={t.id} tool={t} compact onOpen={() => abrirEnlace(t.url, t.nombre)} />
+                  ))}
             </div>
           </div>
 
@@ -1064,6 +1071,8 @@ function VistaClienteHub({ id, tabInicial, modoCliente = false }) {
 }
 
 function HubResumen({ cliente, tareas, equipo = [], onGo }) {
+  const { perfil, quitarMiembro } = useApp();
+  const [sumando, setSumando] = useState(false);
   const k = cliente.kpis;
   return (
     <>
@@ -1110,11 +1119,21 @@ function HubResumen({ cliente, tareas, equipo = [], onGo }) {
         </div>
       </div>
 
-      {equipo.length > 0 && (
+      {(
         <div className="card" style={{ marginTop: 16 }}>
-          <div style={{ padding: "15px 16px 8px" }}>
-            <div className="eyebrow">Quiénes trabajan en esta cuenta</div>
+          <div style={{ padding: "15px 16px 8px", display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="eyebrow">Quiénes entran a esta cuenta</div>
+            {puede(perfil.rol, "clientes.todos") && (
+              <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => setSumando(true)}>
+                <Plus size={13} /> Agregar
+              </button>
+            )}
           </div>
+          {equipo.length === 0 && (
+            <div className="mini" style={{ padding: "4px 16px 14px", lineHeight: 1.5 }}>
+              Todavía no hay nadie asignado. Agregá a quien trabaje en la cuenta y al contacto del cliente.
+            </div>
+          )}
           <div style={{ padding: "0 8px 10px" }}>
             {equipo.map((m) => (
               <div key={m.id} className="row-link" style={{ cursor: "default" }}>
@@ -1122,14 +1141,26 @@ function HubResumen({ cliente, tareas, equipo = [], onGo }) {
                   background: ROLES[m.perfil.rol].tipo === "cliente" ? "linear-gradient(150deg,#94A3B8,#5F6673)" : undefined }}>
                   {m.perfil.nombre[0]}{m.perfil.apellido[0]}
                 </span>
-                <span style={{ fontSize: 13 }}>{m.perfil.nombre} {m.perfil.apellido}</span>
-                <span style={{ marginLeft: "auto" }}>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 13 }}>{m.perfil.nombre} {m.perfil.apellido}</span>
+                  <span className="mini" style={{ display: "block" }}>{m.perfil.email}</span>
+                </span>
+                <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
                   <StatusBadge tone={ROLES[m.perfil.rol].tipo === "cliente" ? "gray" : "blue"}>{m.rolOrg}</StatusBadge>
+                  {puede(perfil.rol, "clientes.todos") && (
+                    <button className="icon-btn" style={{ width: 28, height: 28 }} title="Quitar de esta cuenta"
+                      onClick={() => quitarMiembro(m.id)}><X size={13} /></button>
+                  )}
                 </span>
               </div>
             ))}
           </div>
         </div>
+      )}
+
+      {sumando && (
+        <AgregarMiembroModal cliente={cliente} yaEstan={equipo.map((m) => m.perfil.id)}
+          onClose={() => setSumando(false)} />
       )}
     </>
   );
@@ -1185,7 +1216,7 @@ function VistaArea({ id }) {
 }
 
 function VistaSubmodulo({ areaId, subId }) {
-  const { go, perfil, clientesVisibles, crearRegistro, cambiarEstadoRegistro, crearRecurso, version } = useApp();
+  const { go, perfil, clientesVisibles, crearRegistro, cambiarEstadoRegistro, crearRecurso, abrirEnlace, version } = useApp();
   const area = AREAS.find((a) => a.id === areaId);
   const sub = area?.items.find((i) => i.id === subId);
   const [nuevo, setNuevo] = useState(false);
@@ -1242,7 +1273,7 @@ function VistaSubmodulo({ areaId, subId }) {
                   if (!rec) return null;
                   return (
                     <button className="icon-btn" style={{ width: 30, height: 30 }} title={rec.nombre}
-                      onClick={() => rec.url ? window.open(rec.url, "_blank", "noopener,noreferrer") : null}>
+                      onClick={() => abrirEnlace(rec.url, rec.nombre)}>
                       <FileText size={14} />
                     </button>
                   );
@@ -1658,10 +1689,14 @@ function VistaCalendario() {
   );
 }
 
-/* --- Herramientas ------------------------------------------------------- */
+/* --- Herramientas -------------------------------------------------------
+   Son los recursos globales de la agencia: viven en la base, no en el
+   navegador. Antes se cargaban en Configuración y se perdían al recargar. */
 function VistaHerramientas() {
-  const { tools, abrirTool, go } = useApp();
-  const sinUrl = tools.filter((t) => !t.url).length;
+  const { abrirEnlace, go, recursos } = useApp();
+  const herramientas = recursos.filter((r) => !r.org && r.estado === "activo");
+  const sinUrl = herramientas.filter((t) => !t.url).length;
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
@@ -1669,22 +1704,31 @@ function VistaHerramientas() {
           <h1 className="h1">Herramientas</h1>
           <p className="sub">Todo lo que usamos a diario, a un clic.</p>
         </div>
-        <button className="btn btn-ghost" style={{ marginLeft: "auto" }} onClick={() => go({ view: "config" })}><Settings size={15} /> Configurar enlaces</button>
+        <button className="btn btn-ghost" style={{ marginLeft: "auto" }} onClick={() => go({ view: "recursos" })}>
+          <Settings size={15} /> Administrar enlaces
+        </button>
       </div>
 
       {sinUrl > 0 && (
-        <div className="card card-pad" style={{ marginBottom: 18, display: "flex", gap: 11, alignItems: "center", borderColor: "var(--orange)", background: "var(--orange-soft)" }}>
+        <div className="card card-pad" style={{ marginBottom: 18, display: "flex", gap: 11, alignItems: "center",
+          borderColor: "var(--orange)", background: "var(--orange-soft)", flexWrap: "wrap" }}>
           <AlertCircle size={17} style={{ color: "var(--orange)", flexShrink: 0 }} />
-          <span style={{ fontSize: 13.2, flex: 1 }}>
-            {sinUrl} {sinUrl === 1 ? "herramienta todavía no tiene enlace cargado" : "herramientas todavía no tienen enlace cargado"}. Cargalos en Configuración y se abren desde acá.
+          <span style={{ fontSize: 13.2, flex: 1, minWidth: 200 }}>
+            {sinUrl} {sinUrl === 1 ? "herramienta no tiene enlace cargado" : "herramientas no tienen enlace cargado"}.
+            Cargalos en Recursos y quedan guardados para todo el equipo.
           </span>
-          <button className="btn btn-ghost btn-sm" onClick={() => go({ view: "config" })}>Cargar enlaces</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => go({ view: "recursos" })}>Cargar enlaces</button>
         </div>
       )}
 
-      <div className="grid g3">
-        {tools.map((t) => <ToolCard key={t.id} tool={t} onOpen={abrirTool} />)}
-      </div>
+      {herramientas.length === 0 ? (
+        <div className="card"><Empty icon={Link2} titulo="Todavía no hay herramientas"
+          texto="Cargá las que usa la agencia desde Recursos." cta="Ir a Recursos" onCta={() => go({ view: "recursos" })} /></div>
+      ) : (
+        <div className="grid g3">
+          {herramientas.map((t) => <ToolCard key={t.id} tool={t} onOpen={() => abrirEnlace(t.url, t.nombre)} />)}
+        </div>
+      )}
     </>
   );
 }
@@ -1854,9 +1898,9 @@ function VistaAutomatizaciones() {
 
 /* --- Configuración ------------------------------------------------------ */
 function VistaConfig() {
-  const { tools, setTools, quick, setQuick, perfil, verComo, setVerComo, salir, dark, setDark } = useApp();
+  const { quick, setQuick, perfil, verComo, setVerComo, salir, dark, setDark, go } = useApp();
   const admin = puede(perfil.rol, "config");
-  const [tab, setTab] = useState(admin ? "herramientas" : "cuenta");
+  const [tab, setTab] = useState(admin ? "accesos" : "cuenta");
   const [cambiando, setCambiando] = useState(false);
   const [pass1, setPass1] = useState("");
   const [pass2, setPass2] = useState("");
@@ -1879,35 +1923,10 @@ function VistaConfig() {
       </div>
 
       <div className="tabs" style={{ marginBottom: 20 }}>
-        {(admin ? [["herramientas", "Herramientas"], ["accesos", "Accesos rápidos"], ["cuenta", "Mi cuenta"]] : [["cuenta", "Mi cuenta"]]).map(([k, l]) => (
+        {(admin ? [["accesos", "Accesos rápidos"], ["cuenta", "Mi cuenta"]] : [["cuenta", "Mi cuenta"]]).map(([k, l]) => (
           <button key={k} className={`tab ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
-
-      {tab === "herramientas" && (
-        <div style={{ maxWidth: 760 }}>
-          <p className="mini" style={{ marginBottom: 14, lineHeight: 1.55 }}>
-            Pegá el enlace exacto de cada herramienta (por ejemplo, la cuenta publicitaria específica que usás). El sistema no inventa direcciones: abre lo que cargues acá.
-          </p>
-          <div className="card">
-            {tools.map((t) => (
-              <div key={t.id} className="list-row">
-                <span style={{ width: 30, height: 30, borderRadius: 8, background: t.color, color: "#fff", display: "flex",
-                  alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>{t.letra}</span>
-                <span style={{ width: 168, flexShrink: 0, minWidth: 0 }}>
-                  <span style={{ display: "block", fontSize: 13.3, fontWeight: 600 }}>{t.nombre}</span>
-                  <span className="mini" style={{ display: "block" }}>{t.desc}</span>
-                </span>
-                <input value={t.url} placeholder="Pegá el enlace acá"
-                  onChange={(e) => setTools((ts) => ts.map((x) => x.id === t.id ? { ...x, url: e.target.value } : x))}
-                  style={{ flex: 1, minWidth: 120, padding: "8px 11px", borderRadius: 9, border: "1px solid var(--border)",
-                    background: "var(--surface-2)", color: "var(--text)", fontSize: 12.5, outline: "none" }} />
-                {t.url ? <StatusBadge tone="green" dot>Listo</StatusBadge> : <StatusBadge tone="gray">Sin cargar</StatusBadge>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {tab === "accesos" && (
         <div style={{ maxWidth: 620 }}>
@@ -2100,6 +2119,7 @@ function VistaPortalCliente() {
 }
 
 function ModuloClienteModal({ moduloId, onClose, onAviso }) {
+  const { abrirEnlace } = useApp();
   const m = services.modulosCliente.get(moduloId);
   const bloques = services.contenidoModulo.byModulo(moduloId);
   /* Solo llegan los recursos de su cuenta con el candado abierto:
@@ -2127,7 +2147,7 @@ function ModuloClienteModal({ moduloId, onClose, onAviso }) {
             <button className="btn btn-primary" style={{ width: "100%", marginBottom: bloques.length ? 18 : 0 }}
               onClick={() => {
                 if (!m.accionUrl) { onAviso("Todavía estamos preparando este paso. Te avisamos apenas esté listo."); return; }
-                window.open(m.accionUrl, "_blank", "noopener,noreferrer");
+                abrirEnlace(m.accionUrl, m.nombre);
               }}>
               <ExternalLink size={15} /> {m.accionTexto}
             </button>
@@ -2162,7 +2182,7 @@ function ModuloClienteModal({ moduloId, onClose, onAviso }) {
               <div className="eyebrow" style={{ marginBottom: 8 }}>Documentos</div>
               {recursos.map((r) => (
                 <button key={r.id} className="row-link" style={{ padding: "10px 11px" }}
-                  onClick={() => r.url ? window.open(r.url, "_blank", "noopener,noreferrer")
+                  onClick={() => r.url ? abrirEnlace(r.url, r.nombre)
                     : onAviso("Estamos terminando de preparar este documento.")}>
                   <span style={{ width: 28, height: 28, borderRadius: 7, background: r.color, color: "#fff",
                     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -2442,7 +2462,7 @@ const ESTADOS_MODULO = {
 };
 
 function VistaSubarea({ slug }) {
-  const { go, perfil, clientesVisibles, guardarAvance, version, mostrar } = useApp();
+  const { go, perfil, clientesVisibles, guardarAvance, abrirEnlace, version, mostrar } = useApp();
   const sub = services.subareas.get(slug);
   const [orgId, setOrgId] = useState(clientesVisibles[0]?.id || null);
   const [guardando, setGuardando] = useState(false);
@@ -2480,10 +2500,7 @@ function VistaSubarea({ slug }) {
     finally { setGuardando(false); }
   };
 
-  const abrir = (r) => {
-    if (!r?.url) { mostrar(`${r?.nombre || "Esa herramienta"} todavía no tiene enlace cargado. Cargalo en Configuración → Recursos.`); return; }
-    window.open(r.url, "_blank", "noopener,noreferrer");
-  };
+  const abrir = (r) => abrirEnlace(r?.url, r?.nombre);
 
   return (
     <>
@@ -2636,7 +2653,7 @@ const TIPOS_RECURSO = [
 
 function VistaRecursos() {
   const { go, perfil, clientesVisibles, recursos, guardarRecurso, crearRecurso,
-          duplicarRecurso, borrarRecurso, mostrar } = useApp();
+          duplicarRecurso, borrarRecurso, abrirEnlace, mostrar } = useApp();
   const [q, setQ] = useState("");
   const [fCliente, setFCliente] = useState("todos");
   const [fArea, setFArea] = useState("todas");
@@ -2742,7 +2759,7 @@ function VistaRecursos() {
               <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                 {r.url && (
                   <button className="icon-btn" style={{ width: 30, height: 30 }} title="Abrir"
-                    onClick={() => window.open(r.url, "_blank", "noopener,noreferrer")}><ExternalLink size={14} /></button>
+                    onClick={() => abrirEnlace(r.url, r.nombre)}><ExternalLink size={14} /></button>
                 )}
                 <button className="icon-btn" style={{ width: 30, height: 30 }} title="Editar"
                   onClick={() => setEditar(r)}><Settings size={14} /></button>
@@ -2893,6 +2910,7 @@ function RecursoModal({ recurso, clientes, onClose, onGuardar, compacto = false 
 
 /* --- Selector de recurso: elegir uno que ya existe, o crear el primero --- */
 function SelectorRecurso({ valor, onChange, org, area, subarea, clientes, onCrear }) {
+  const { abrirEnlace } = useApp();
   const [buscando, setBuscando] = useState(false);
   const [q, setQ] = useState("");
   const [creando, setCreando] = useState(false);
@@ -2925,7 +2943,7 @@ function SelectorRecurso({ valor, onChange, org, area, subarea, clientes, onCrea
         </span>
         {elegido.url && (
           <button className="icon-btn" style={{ width: 30, height: 30 }}
-            onClick={() => window.open(elegido.url, "_blank", "noopener,noreferrer")}><ExternalLink size={14} /></button>
+            onClick={() => abrirEnlace(elegido.url, elegido.nombre)}><ExternalLink size={14} /></button>
         )}
         <button className="btn btn-ghost btn-sm" onClick={() => onChange(null)}>Quitar</button>
       </div>
@@ -3207,6 +3225,80 @@ function EditorModulo({ modulo, onClose }) {
               <Unlock size={14} /> Abrírselo al cliente
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* --- Dar acceso a una cuenta -------------------------------------------
+   El usuario ya existe (se creó en Supabase o por invitación). Acá se decide
+   a qué cliente entra. Sin esta fila, la persona entra y no ve nada.      */
+function AgregarMiembroModal({ cliente, yaEstan, onClose }) {
+  const { usuarios, agregarMiembro, mostrar } = useApp();
+  const [userId, setUserId] = useState("");
+  const [rolOrg, setRolOrg] = useState("");
+  const disponibles = usuarios.filter((u) => !yaEstan.includes(u.id) && u.estado === "activo");
+  const elegido = usuarios.find((u) => u.id === userId);
+  const esCliente = elegido && ROLES[elegido.rol]?.tipo === "cliente";
+
+  const guardar = async () => {
+    if (!userId) { mostrar("Elegí a quién querés dar acceso."); return; }
+    try {
+      await agregarMiembro(cliente.id, userId, rolOrg || (esCliente ? "Cliente" : ROLES[elegido.rol]?.label || "Miembro"));
+      onClose();
+    } catch (e) { mostrar(e.message); }
+  };
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 520 }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+          <div>
+            <div className="h2">Dar acceso a {cliente.nombre}</div>
+            <div className="mini" style={{ marginTop: 2 }}>La persona ya tiene que tener usuario creado.</div>
+          </div>
+          <button className="icon-btn" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Cerrar"><X size={17} /></button>
+        </div>
+
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+          <Campo label="Quién">
+            <select style={inputStyle} value={userId} onChange={(e) => setUserId(e.target.value)} autoFocus>
+              <option value="">Elegí una persona</option>
+              {disponibles.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nombre} {u.apellido} · {ROLES[u.rol]?.label} · {u.email}
+                </option>
+              ))}
+            </select>
+          </Campo>
+          <Campo label="Qué hace en esta cuenta">
+            <input style={inputStyle} value={rolOrg} onChange={(e) => setRolOrg(e.target.value)}
+              placeholder={esCliente ? "Cliente" : "Editor, Estrategia, Media Buyer…"} />
+          </Campo>
+
+          {elegido && (
+            <div className="card card-pad" style={{ padding: 13, background: esCliente ? "var(--blue-soft)" : "var(--surface-2)",
+              borderColor: esCliente ? "var(--blue-light)" : "var(--border)" }}>
+              <span style={{ fontSize: 12.6, lineHeight: 1.55 }}>
+                {esCliente
+                  ? `${elegido.nombre} va a ver únicamente el portal de ${cliente.nombre}. No accede al sistema interno ni a otras cuentas.`
+                  : `${elegido.nombre} va a poder trabajar en ${cliente.nombre} según su rol de ${ROLES[elegido.rol]?.label}.`}
+              </span>
+            </div>
+          )}
+
+          {disponibles.length === 0 && (
+            <p className="mini" style={{ lineHeight: 1.55 }}>
+              No hay nadie más para agregar. Creá primero el usuario desde el panel de Supabase o invitalo desde Administración.
+            </p>
+          )}
+        </div>
+
+        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary btn-sm" onClick={guardar}>Dar acceso</button>
         </div>
       </div>
     </div>
@@ -3518,7 +3610,6 @@ export default function MarketingEnFlujoOS() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [notisOpen, setNotisOpen] = useState(false);
   const [notis, setNotis] = useState([]);
-  const [tools, setTools] = useState(TOOLS_INIT);
   const [quick, setQuick] = useState(QUICK_INIT);
   const [session, setSession] = useState(null);
   const [perfil, setPerfil] = useState(null);
@@ -3597,10 +3688,15 @@ export default function MarketingEnFlujoOS() {
     window.scrollTo?.({ top: 0, behavior: "auto" });
   };
 
-  const abrirTool = (tool) => {
-    if (tool.url) { window.open(tool.url, "_blank", "noopener,noreferrer"); return; }
-    setAviso(`${tool.nombre} todavía no tiene enlace cargado. Cargalo en Configuración y se abre desde acá.`);
-    setTimeout(() => setAviso(null), 4200);
+  /* Un solo lugar para abrir cualquier enlace del sistema: si falta el
+     https:// lo completa, y si no hay enlace avisa en vez de no hacer nada. */
+  const abrirEnlace = (url, nombre = "Este recurso") => {
+    const limpio = normalizarUrl(url);
+    if (!limpio) {
+      mostrar(`${nombre} todavía no tiene enlace cargado. Cargalo en Recursos y se abre desde acá.`);
+      return;
+    }
+    window.open(limpio, "_blank", "noopener,noreferrer");
   };
 
   /* rolActivo permite al CEO simular otros roles sin cambiar sus permisos reales.
@@ -3697,6 +3793,17 @@ export default function MarketingEnFlujoOS() {
     catch (e) { mostrar(e.message); }
   };
 
+  const agregarMiembro = async (orgId, userId, rolOrg) => {
+    await acciones.agregarMiembro(orgId, userId, rolOrg);
+    setVersion((v) => v + 1);
+    mostrar("Listo. Ya puede entrar a esa cuenta.");
+  };
+
+  const quitarMiembro = async (id) => {
+    try { await acciones.quitarMiembro(id); setVersion((v) => v + 1); }
+    catch (e) { mostrar(e.message); }
+  };
+
   const cambiarEstadoAcceso = async (id, estado) => {
     try { await acciones.cambiarEstadoAcceso(id, estado); setVersion((v) => v + 1); }
     catch (e) { mostrar(e.message); }
@@ -3729,13 +3836,13 @@ export default function MarketingEnFlujoOS() {
 
   const ctx = {
     route, go, dark, setDark, notis, setNotis, notisOpen, setNotisOpen,
-    tools, setTools, quick, setQuick, abrirTool, now, mostrar,
+    quick, setQuick, abrirEnlace, now, mostrar,
     session, perfil, rolActivo, setVerComo, verComo, salir,
     usuarios, invitaciones, invitar, cambiarEstadoUsuario, cambiarRolUsuario, cambiarEstadoTarea,
     clientesVisibles, getCliente, accesoA, crearCliente, version,
     recursos, guardarAvance, guardarRecurso, crearRecurso, duplicarRecurso, borrarRecurso, cambiarEstadoModulo,
     crearRegistro, cambiarEstadoRegistro, crearTarea, guardarAccionModulo,
-    cambiarEstadoAcceso, guardarBloque, borrarBloque,
+    cambiarEstadoAcceso, guardarBloque, borrarBloque, agregarMiembro, quitarMiembro,
   };
 
   const esCliente = perfil ? ROLES[rolActivo].tipo === "cliente" : false;

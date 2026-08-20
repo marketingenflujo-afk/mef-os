@@ -292,17 +292,32 @@ export const acciones = {
 
   /* --- Recursos: cambiar un enlace no debería requerir un programador --- */
   async guardarRecurso(id, campos) {
-    const { error } = await supabase.from("resources")
-      .update({ ...campos, actualizado_en: new Date().toISOString() }).eq("id", id);
+    const limpio = { ...campos, actualizado_en: new Date().toISOString() };
+    if ("url" in limpio) limpio.url = normalizarUrl(limpio.url);
+    const { error } = await supabase.from("resources").update(limpio).eq("id", id);
     if (error) throw new Error(traducirEscritura(error));
-    cache.recursos = cache.recursos.map((r) => r.id === id ? { ...r, ...campos } : r);
+    /* La base usa nombres de columna; la interfaz usa los suyos. */
+    cache.recursos = cache.recursos.map((r) => r.id === id ? {
+      ...r,
+      ...(limpio.nombre !== undefined ? { nombre: limpio.nombre } : {}),
+      ...(limpio.tipo !== undefined ? { tipo: limpio.tipo } : {}),
+      ...(limpio.url !== undefined ? { url: limpio.url || "" } : {}),
+      ...(limpio.descripcion !== undefined ? { descripcion: limpio.descripcion || "" } : {}),
+      ...(limpio.area !== undefined ? { area: limpio.area } : {}),
+      ...(limpio.subarea !== undefined ? { subarea: limpio.subarea } : {}),
+      ...(limpio.proyecto !== undefined ? { proyecto: limpio.proyecto || "" } : {}),
+      ...(limpio.estado !== undefined ? { estado: limpio.estado } : {}),
+      ...(limpio.organization_id !== undefined ? { org: limpio.organization_id } : {}),
+      ...(limpio.visible_cliente !== undefined ? { visibleCliente: limpio.visible_cliente } : {}),
+      ...(limpio.modulo_cliente !== undefined ? { moduloCliente: limpio.modulo_cliente || "" } : {}),
+    } : r);
   },
 
   async crearRecurso(d, autorId) {
     const { data, error } = await supabase.from("resources").insert({
       organization_id: d.org || null, nombre: d.nombre, tipo: d.tipo || "enlace",
       categoria: d.categoria || null, area: d.area || null, subarea: d.subarea || null,
-      url: d.url || null, descripcion: d.descripcion || null, color: d.color || "#155EEA",
+      url: normalizarUrl(d.url), descripcion: d.descripcion || null, color: d.color || "#155EEA",
       visible_cliente: !!d.visibleCliente, estado: d.estado || "activo",
       proyecto: d.proyecto || null, modulo_cliente: d.moduloCliente || null,
       creado_por: autorId || null,
@@ -373,6 +388,22 @@ export const acciones = {
     cache.tareas = [mapTarea(data, cache.usuarios, cache.proyectos), ...cache.tareas];
   },
 
+  /* --- Quién entra a cada cuenta --------------------------------------- */
+  async agregarMiembro(orgId, userId, rolOrg) {
+    const { data, error } = await supabase.from("organization_members")
+      .insert({ organization_id: orgId, user_id: userId, rol_org: rolOrg })
+      .select().single();
+    if (error) throw new Error(traducirEscritura(error));
+    cache.membresias = [...cache.membresias,
+      { id: data.id, user: data.user_id, org: data.organization_id, rolOrg: data.rol_org }];
+  },
+
+  async quitarMiembro(id) {
+    const { error } = await supabase.from("organization_members").delete().eq("id", id);
+    if (error) throw new Error(traducirEscritura(error));
+    cache.membresias = cache.membresias.filter((m) => m.id !== id);
+  },
+
   /* --- Accesos que le pedimos al cliente -------------------------------- */
   async cambiarEstadoAcceso(id, estado) {
     const { error } = await supabase.from("client_accesses")
@@ -415,6 +446,7 @@ export const acciones = {
   },
 
   async guardarAccionModulo(moduleId, campos) {
+    if ("accion_url" in campos) campos.accion_url = normalizarUrl(campos.accion_url);
     const { error } = await supabase.from("client_modules").update(campos).eq("id", moduleId);
     if (error) throw new Error(traducirEscritura(error));
     cache.modulosCliente = cache.modulosCliente.map((m) => m.id === moduleId
@@ -554,6 +586,16 @@ function relativo(iso) {
   if (dias === 1) return "Ayer";
   if (dias < 30) return `Hace ${dias} días`;
   return fecha(iso);
+}
+
+/* Si pegan "docs.google.com/..." sin https://, el navegador lo toma como una
+   ruta de nuestra propia app y no lleva a ningún lado. Lo completamos. */
+export function normalizarUrl(url) {
+  const u = String(url || "").trim();
+  if (!u) return null;
+  if (/^https?:\/\//i.test(u)) return u;
+  if (/^(mailto:|tel:)/i.test(u)) return u;
+  return `https://${u.replace(/^\/+/, "")}`;
 }
 
 function slugify(s) {
