@@ -229,13 +229,89 @@
   .searchbar{min-width:0;width:44px;padding:8px;justify-content:center}
   .searchbar span,.searchbar .kbd{display:none}
 }
+/* ---------- móvil ----------
+   Muchos anchos fijos viven en estilos en línea (width: 170, etc.), pensados
+   para pantalla grande. En un celular no entran, así que acá los anulamos.
+   Los !important son necesarios: un estilo en línea no se pisa de otra forma. */
 @media (max-width:720px){
-  .canvas{padding:18px 16px}
-  .header{padding:12px 16px}
+  .canvas{padding:16px 14px 28px}
+  .header{padding:11px 14px;gap:10px}
   .g4,.g3,.g2{grid-template-columns:1fr}
-  .h1{font-size:21px}
-  .cal-d{min-height:70px}
+  .h1{font-size:20px}
+  .h2{font-size:16px}
+  .sub{font-size:13px}
   .rail > *{min-width:100%}
+
+  /* Filas de tabla: en vez de comprimirse, se apilan */
+  .list-row{flex-wrap:wrap;gap:9px;padding:13px 14px}
+  .list-row > span[style*="width:"],
+  .list-row > span[style*="width :"]{width:auto !important;text-align:left !important}
+  .list-row > span[style*="text-align: right"]{text-align:left !important}
+  .list-row select,.list-row input{width:100% !important}
+
+  /* Cabeceras de tabla: no sirven cuando la fila se apila */
+  .list-row[style*="var(--surface-2)"]{display:none}
+
+  /* Formularios: una sola columna */
+  .modal div[style*="grid-template-columns: 1fr 1fr"]{grid-template-columns:1fr !important}
+  .modal{max-width:100% !important;border-radius:16px}
+  .overlay{padding:12px 10px}
+  .modal div[style*="max-height"]{max-height:62vh !important}
+
+  /* Paneles laterales que en escritorio van fijos al costado */
+  .card[style*="width: 210px"],
+  .card[style*="width: 300px"],
+  div[style*="width: 300px"],
+  nav[style*="width: 210px"]{width:100% !important;position:static !important}
+  aside[style*="width: 400px"]{width:100% !important}
+  .split,.split > .col{width:100%}
+
+  /* Objetivos de toque más grandes: el dedo no es un mouse */
+  .pill{padding:8px 13px;font-size:12.5px}
+  .btn{padding:11px 16px}
+  .btn-sm{padding:9px 13px}
+  .icon-btn{width:40px;height:40px}
+  .row-link{padding:11px 10px}
+  .nav-item{padding:11px 12px}
+  .tab{padding:12px 13px}
+  .check{width:22px;height:22px}
+
+  /* Grupos de botones de estado: que envuelvan en vez de desbordar */
+  .list-row > span[style*="flex-wrap"]{width:100% !important;justify-content:flex-start !important}
+
+  .cal-d{min-height:64px;padding:5px}
+  .cal-h{padding:7px 3px;font-size:9.5px}
+  .ev{font-size:9.5px;padding:2px 4px}
+  .code{font-size:11.5px;padding:11px}
+  .flujo{padding-bottom:4px}
+  .drawer{width:100% !important}
+  .searchbar{min-width:0}
+
+  /* Nada debe empujar la página a lo ancho */
+  .canvas,.main,.shell{overflow-x:hidden}
+  .card{max-width:100%}
+  .code,.mini,.h1,.h2,.h3{overflow-wrap:anywhere}
+
+  /* El calendario en grilla no entra: se muestra como lista de días */
+  .cal-mobile{display:block}
+  .cal-desktop{display:none}
+}
+
+@media (min-width:721px){
+  .cal-mobile{display:none}
+}
+
+@media (max-width:420px){
+  .canvas{padding:14px 11px 26px}
+  .card-pad{padding:15px}
+  .stat-num{font-size:20px}
+  .h1{font-size:19px}
+  .side{width:min(84vw,270px)}
+  /* Las tarjetas de métricas quedan de a dos: cuatro números de un vistazo */
+  .grid.g4{grid-template-columns:1fr 1fr;gap:11px}
+  .grid.g4 .card-pad{padding:13px}
+  .grid.g4 .stat-ico{display:none}
+  .cal-d{min-height:52px}
 }
 @media (max-width:900px){ .login-art{display:none} }
 @media (prefers-reduced-motion:reduce){

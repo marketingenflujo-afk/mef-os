@@ -1598,7 +1598,45 @@ function VistaCalendario() {
         ))}
       </div>
 
-      <div className="card" style={{ overflow: "hidden", padding: 0 }}>
+      {/* En el celular la grilla de 7 columnas es ilegible: va como agenda. */}
+      <div className="cal-mobile">
+        {(() => {
+          const conEventos = [...new Set(eventos.map((e) => e.d))].sort((a, b) => a - b);
+          if (!conEventos.length) return (
+            <div className="card"><Empty icon={Calendar} titulo="Nada agendado este mes"
+              texto="Las reuniones, entregas y publicaciones van a aparecer acá." /></div>
+          );
+          return conEventos.map((d) => {
+            const fecha = new Date(year, month, d);
+            const hoy = d === now.getDate();
+            return (
+              <div key={d} className="card" style={{ marginBottom: 10 }}>
+                <div style={{ padding: "12px 15px 8px", display: "flex", alignItems: "center", gap: 9 }}>
+                  <span className={`cal-n ${hoy ? "today" : ""}`} style={{ fontSize: 13 }}>{d}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, textTransform: "capitalize" }}>
+                    {fecha.toLocaleDateString("es-AR", { weekday: "long" })}
+                  </span>
+                  {hoy && <StatusBadge tone="blue">Hoy</StatusBadge>}
+                </div>
+                <div style={{ padding: "0 8px 10px" }}>
+                  {eventos.filter((e) => e.d === d).map((e, i) => {
+                    const t = TONE[TIPO_EVENTO[e.tipo].tone];
+                    return (
+                      <div key={i} className="row-link" style={{ cursor: "default" }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 99, background: t.fg, flexShrink: 0 }} />
+                        <span style={{ minWidth: 0, flex: 1, fontSize: 13 }}>{e.t}</span>
+                        {e.h && <span className="mini" style={{ flexShrink: 0 }}>{e.h}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          });
+        })()}
+      </div>
+
+      <div className="card cal-desktop" style={{ overflow: "hidden", padding: 0 }}>
         <div className="cal">
           {["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"].map((d) => <div key={d} className="cal-h">{d}</div>)}
           {celdas.map((d, i) => {
